@@ -324,3 +324,123 @@ func TestMainWorkspaceView_QuerySync(t *testing.T) {
 		t.Fatalf("expected method POST after clicking GET, got %s", state.ActiveRequest.Method)
 	}
 }
+
+func TestUrlBarView(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ActiveRequest.Method = "GET"
+	state.ActiveRequest.URL = "https://api.internal.net/v1/users"
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		UrlBarView(c, state)
+	}, 1200, 100)
+	tt.Frame()
+
+	// Verify method badge, variable chip, and Send button
+	if !tt.HasText("GET") {
+		t.Fatal("expected GET method badge")
+	}
+	if !tt.HasText("{{base_url}}") {
+		t.Fatal("expected {{base_url}} variable chip")
+	}
+	if !tt.HasText("https://api.internal.net/v1/users") {
+		t.Fatal("expected URL text in bar")
+	}
+	if !tt.HasText("Send") {
+		t.Fatal("expected Send button")
+	}
+
+	// Click method badge to cycle to POST
+	if err := tt.Click("GET"); err != nil {
+		t.Fatalf("failed to click method: %v", err)
+	}
+	tt.Frame()
+
+	if state.ActiveRequest.Method != "POST" {
+		t.Fatalf("expected POST, got %s", state.ActiveRequest.Method)
+	}
+}
+
+func TestRequestTabsView_AuthSecretToggle(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ActiveTab = "auth"
+	state.ActiveRequest.AuthType = "bearer"
+	state.ActiveRequest.Token = "secret_jwt_token"
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		RequestTabsView(c, state)
+	}, 1000, 400)
+	tt.Frame()
+
+	// Initial secret button is SHOW
+	if !tt.HasText("SHOW") {
+		t.Fatal("expected SHOW button for masked secret")
+	}
+	if state.ShowAuthSecret {
+		t.Fatal("expected ShowAuthSecret to be false initially")
+	}
+
+	// Click SHOW to reveal
+	if err := tt.Click("SHOW"); err != nil {
+		t.Fatalf("failed to click SHOW: %v", err)
+	}
+	tt.Frame()
+
+	if !state.ShowAuthSecret {
+		t.Fatal("expected ShowAuthSecret to be true after clicking SHOW")
+	}
+	if !tt.HasText("HIDE") {
+		t.Fatal("expected HIDE button after revealing secret")
+	}
+
+	// Click HIDE to mask again
+	if err := tt.Click("HIDE"); err != nil {
+		t.Fatalf("failed to click HIDE: %v", err)
+	}
+	tt.Frame()
+
+	if state.ShowAuthSecret {
+		t.Fatal("expected ShowAuthSecret to be false after clicking HIDE")
+	}
+}
+
+func TestRequestTabsView_BodyModes(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ActiveTab = "body"
+	state.ActiveRequest.BodyType = "json"
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		RequestTabsView(c, state)
+	}, 1000, 400)
+	tt.Frame()
+
+	// Verify JSON Beautify button
+	if !tt.HasText("Beautify") {
+		t.Fatal("expected Beautify button in JSON mode")
+	}
+
+	// Switch to Form-Data
+	if err := tt.Click("Form-Data"); err != nil {
+		t.Fatalf("failed to click Form-Data: %v", err)
+	}
+	tt.Frame()
+
+	if state.ActiveRequest.BodyType != "form-data" {
+		t.Fatalf("expected bodyType form-data, got %s", state.ActiveRequest.BodyType)
+	}
+	if !tt.HasText("+ Add Form Field") {
+		t.Fatal("expected + Add Form Field button")
+	}
+
+	// Switch to Binary
+	if err := tt.Click("Binary"); err != nil {
+		t.Fatalf("failed to click Binary: %v", err)
+	}
+	tt.Frame()
+
+	if state.ActiveRequest.BodyType != "binary" {
+		t.Fatalf("expected bodyType binary, got %s", state.ActiveRequest.BodyType)
+	}
+	if !tt.HasText("File Path:") {
+		t.Fatal("expected File Path: label in binary mode")
+	}
+}

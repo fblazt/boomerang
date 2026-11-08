@@ -129,15 +129,16 @@ func KVTable(c *ui.Context, props KVTableProps) ui.Element {
 							ui.Box(c).Width(8)
 
 							// Key Input / Autocomplete
+							var keyEl ui.Element
 							if len(props.Suggestions) > 0 {
-								ui.Autocomplete(c, &item.Key, props.Suggestions).
+								keyEl = ui.Autocomplete(c, &item.Key, props.Suggestions).
 									Font(theme.FontMono).
 									FontSize(theme.SizeBase).
 									TextColor(textColor).
 									Placeholder(props.KeyPrompt).
 									Width(160)
 							} else {
-								ui.TextInput(c, &item.Key).
+								keyEl = ui.TextInput(c, &item.Key).
 									Font(theme.FontMono).
 									FontSize(theme.SizeBase).
 									TextColor(textColor).
@@ -148,7 +149,7 @@ func KVTable(c *ui.Context, props KVTableProps) ui.Element {
 							ui.Box(c).Width(8)
 
 							// Value Input
-							ui.TextInput(c, &item.Value).
+							valEl := ui.TextInput(c, &item.Value).
 								Font(theme.FontMono).
 								FontSize(theme.SizeBase).
 								TextColor(theme.RimFocus).
@@ -158,12 +159,17 @@ func KVTable(c *ui.Context, props KVTableProps) ui.Element {
 							ui.Box(c).Width(8)
 
 							// Description Input
-							ui.TextInput(c, &item.Description).
+							descEl := ui.TextInput(c, &item.Description).
 								Font(theme.FontSans).
 								FontSize(theme.SizeBase).
 								TextColor(theme.TextMuted).
 								Placeholder(props.DescPrompt).
 								Grow(1)
+
+							// Trigger change on typing
+							if (keyEl.Changed() || valEl.Changed() || descEl.Changed()) && props.OnChange != nil {
+								props.OnChange()
+							}
 
 							ui.Box(c).Width(6)
 
@@ -176,10 +182,14 @@ func KVTable(c *ui.Context, props KVTableProps) ui.Element {
 								Focusable()
 
 							if delBtn.Clicked() {
-								*props.Items = append(items[:idx], items[idx+1:]...)
+								newItems := make([]models.KeyValuePair, 0, len(items)-1)
+								newItems = append(newItems, items[:idx]...)
+								newItems = append(newItems, items[idx+1:]...)
+								*props.Items = newItems
 								if props.OnChange != nil {
 									props.OnChange()
 								}
+								return
 							}
 
 							delBtn.Children(func() {

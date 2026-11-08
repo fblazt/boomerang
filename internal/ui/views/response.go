@@ -16,11 +16,13 @@ func ResponseView(c *ui.Context, state *models.AppState) ui.Element {
 	var resp *models.ResponseModel
 	var isLoading bool
 	var elapsedMs int64
+	var method string
 
 	state.View(func(s *models.AppState) {
 		resp = s.ActiveResponse
 		isLoading = s.IsLoading
 		elapsedMs = s.ElapsedMs
+		method = s.ActiveRequest.Method
 	})
 
 	return ui.Column(c).
@@ -32,7 +34,7 @@ func ResponseView(c *ui.Context, state *models.AppState) ui.Element {
 		Gap(10).
 		Children(func() {
 			if isLoading {
-				renderInFlightView(c, elapsedMs)
+				renderInFlightView(c, method, elapsedMs)
 				return
 			}
 
@@ -52,7 +54,10 @@ func ResponseView(c *ui.Context, state *models.AppState) ui.Element {
 		})
 }
 
-func renderInFlightView(c *ui.Context, elapsedMs int64) {
+func renderInFlightView(c *ui.Context, method string, elapsedMs int64) {
+	if method == "" {
+		method = "GET"
+	}
 	ui.Column(c).
 		Grow(1).
 		Center().
@@ -62,25 +67,25 @@ func renderInFlightView(c *ui.Context, elapsedMs int64) {
 				AlignItems(ui.Center).
 				Gap(10).
 				Children(func() {
-					primitives.KeycapBadge(c, "POST")
+					primitives.KeycapBadge(c, method)
 					ui.Text(c, fmt.Sprintf("Request in-flight • %d ms elapsed", elapsedMs)).
 						Font(theme.FontMono).
 						FontSize(theme.SizeBody).
 						TextColor(theme.RimFocus)
 				})
 
-			// Stepper indicator
+			// Stepper indicator (Brilliant Screen 02)
 			ui.Row(c).
 				AlignItems(ui.Center).
 				Gap(8).
 				Children(func() {
-					renderStepBadge(c, "1. DNS", true)
+					renderStepBadge(c, "1. Pre-Script", true)
 					ui.Text(c, "→").Font(theme.FontMono).FontSize(11).TextColor(theme.TextDim)
-					renderStepBadge(c, "2. TLS", true)
+					renderStepBadge(c, "2. OAuth2", true)
 					ui.Text(c, "→").Font(theme.FontMono).FontSize(11).TextColor(theme.TextDim)
 					renderStepBadge(c, "3. Dispatch", true)
 					ui.Text(c, "→").Font(theme.FontMono).FontSize(11).TextColor(theme.TextDim)
-					renderStepBadge(c, "4. Stream", false)
+					renderStepBadge(c, "4. Tests", false)
 				})
 		})
 }
@@ -299,45 +304,49 @@ func renderResponseBody(c *ui.Context, body string) {
 		lines = lines[:200] // prevent huge layout strain in simple viewer
 	}
 
-	ui.Row(c).
+	ui.Scroll(c).
 		Grow(1).
-		Background(theme.CanvasDeep).
-		Radius(6).
-		Padding(10).
-		Border(1, theme.BorderSubtle).
 		Children(func() {
-			// Line numbers column
-			ui.Column(c).
-				Width(32).
-				Children(func() {
-					for i := 1; i <= len(lines); i++ {
-						ui.Text(c, fmt.Sprintf("%d", i)).
-							Font(theme.FontMono).
-							FontSize(theme.SizeCaption).
-							TextColor(theme.TextDim)
-					}
-				})
-
-			ui.Box(c).Width(10)
-
-			// Content lines column
-			ui.Column(c).
+			ui.Row(c).
 				Grow(1).
+				Background(theme.CanvasDeep).
+				Radius(6).
+				Padding(10).
+				Border(1, theme.BorderSubtle).
 				Children(func() {
-					for _, line := range lines {
-						col := theme.TextPrimary
-						trim := strings.TrimSpace(line)
-						if strings.HasPrefix(trim, "\"") && strings.Contains(trim, "\":") {
-							col = theme.RimFocus
-						} else if strings.HasPrefix(trim, "{") || strings.HasPrefix(trim, "}") || strings.HasPrefix(trim, "[") || strings.HasPrefix(trim, "]") {
-							col = theme.TextDim
-						}
+					// Line numbers column
+					ui.Column(c).
+						Width(32).
+						Children(func() {
+							for i := 1; i <= len(lines); i++ {
+								ui.Text(c, fmt.Sprintf("%d", i)).
+									Font(theme.FontMono).
+									FontSize(theme.SizeCaption).
+									TextColor(theme.TextDim)
+							}
+						})
 
-						ui.Text(c, line).
-							Font(theme.FontMono).
-							FontSize(theme.SizeCaption).
-							TextColor(col)
-					}
+					ui.Box(c).Width(10)
+
+					// Content lines column
+					ui.Column(c).
+						Grow(1).
+						Children(func() {
+							for _, line := range lines {
+								col := theme.TextPrimary
+								trim := strings.TrimSpace(line)
+								if strings.HasPrefix(trim, "\"") && strings.Contains(trim, "\":") {
+									col = theme.RimFocus
+								} else if strings.HasPrefix(trim, "{") || strings.HasPrefix(trim, "}") || strings.HasPrefix(trim, "[") || strings.HasPrefix(trim, "]") {
+									col = theme.TextDim
+								}
+
+								ui.Text(c, line).
+									Font(theme.FontMono).
+									FontSize(theme.SizeCaption).
+									TextColor(col)
+							}
+						})
 				})
 		})
 }

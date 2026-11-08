@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
+	"os"
 	"testing"
 	"time"
 
@@ -244,6 +245,97 @@ func TestClient_FormData_And_UrlEncoded(t *testing.T) {
 	})
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("urlencoded failed: err=%v status=%d", err, resp.StatusCode)
+	}
+}
+
+func TestClient_FormDataFileAttachment(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "test-upload-*.bin")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	_, _ = tmpFile.Write([]byte("file-attachment-bytes"))
+	tmpFile.Close()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			t.Fatalf("failed to parse multipart: %v", err)
+		}
+		file, _, err := r.FormFile("document")
+		if err != nil {
+			t.Fatalf("failed to get form file: %v", err)
+		}
+		defer file.Close()
+		content, _ := io.ReadAll(file)
+		if string(content) != "file-attachment-bytes" {
+			t.Fatalf("unexpected content: %s", string(content))
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	client := NewClientWithTransport(&mockTransport{handler: handler}, 5*time.Second)
+	resp, err := client.Execute(context.Background(), models.RequestModel{
+		Method:   "POST",
+		URL:      "http://api.test/upload",
+		BodyType: "form-data",
+		FormData: []models.KeyValuePair{
+			{Key: "document", Value: "@" + tmpFile.Name(), Enabled: true},
+		},
+	})
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("file attachment upload failed: err=%v, status=%d", err, resp.StatusCode)
+	}
+}
+
+func TestClient_BinaryFileBody(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "test-binary-*.bin")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	_, _ = tmpFile.Write([]byte("raw disk binary content"))
+	tmpFile.Close()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != "raw disk binary content" {
+			t.Fatalf("unexpected binary body: %s", string(body))
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	client := NewClientWithTransport(&mockTransport{handler: handler}, 5*time.Second)
+	resp, err := client.Execute(context.Background(), models.RequestModel{
+		Method:   "POST",
+		URL:      "http://api.test/binary",
+		BodyType: "binary",
+		Body:     tmpFile.Name(),
+	})
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("binary file execution failed: err=%v, status=%d", err, resp.StatusCode)
+	}
+}
+
+func TestClient_APIKeyQueryDeduplication(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		keys := r.URL.Query()["api_key"]
+		if len(keys) != 1 || keys[0] != "new_token" {
+			t.Fatalf("expected single api_key with value new_token, got: %v", keys)
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	client := NewClientWithTransport(&mockTransport{handler: handler}, 5*time.Second)
+	resp, err := client.Execute(context.Background(), models.RequestModel{
+		Method:      "GET",
+		URL:         "http://api.test/data?api_key=old_token",
+		AuthType:    "apikey",
+		APIKeyIn:    "query",
+		APIKeyKey:   "api_key",
+		APIKeyValue: "new_token",
+	})
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("apikey query deduplication failed: err=%v status=%d", err, resp.StatusCode)
 	}
 }
 

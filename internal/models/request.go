@@ -82,6 +82,9 @@ func SyncParamsToURL(rawURL string, params []KeyValuePair) string {
 		}
 		k := url.QueryEscape(p.Key)
 		v := url.QueryEscape(p.Value)
+		// Preserve template variable tokens {{...}} without escaping braces
+		k = strings.ReplaceAll(strings.ReplaceAll(k, "%7B%7B", "{{"), "%7D%7D", "}}")
+		v = strings.ReplaceAll(strings.ReplaceAll(v, "%7B%7B", "{{"), "%7D%7D", "}}")
 		pairs = append(pairs, k+"="+v)
 	}
 
@@ -128,6 +131,48 @@ func SyncURLToParams(rawURL string) []KeyValuePair {
 			Value:   v,
 			Enabled: true,
 		})
+	}
+
+	return result
+}
+
+// MergeURLParams parses query parameters from rawURL and merges them with existingParams,
+// preserving custom descriptions, secret flags, and disabled parameters that are not in the URL.
+func MergeURLParams(existingParams []KeyValuePair, rawURL string) []KeyValuePair {
+	parsed := SyncURLToParams(rawURL)
+	if len(parsed) == 0 && len(existingParams) == 0 {
+		return []KeyValuePair{}
+	}
+
+	result := make([]KeyValuePair, 0, len(parsed)+len(existingParams))
+	matchedExisting := make(map[int]bool)
+
+	for _, p := range parsed {
+		found := false
+		for i, ex := range existingParams {
+			if !matchedExisting[i] && ex.Key == p.Key {
+				matchedExisting[i] = true
+				result = append(result, KeyValuePair{
+					Key:         p.Key,
+					Value:       p.Value,
+					Enabled:     true,
+					Description: ex.Description,
+					Secret:      ex.Secret,
+				})
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, p)
+		}
+	}
+
+	// Preserve any disabled parameters that were previously in the table
+	for i, ex := range existingParams {
+		if !matchedExisting[i] && !ex.Enabled && ex.Key != "" {
+			result = append(result, ex)
+		}
 	}
 
 	return result

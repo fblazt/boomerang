@@ -100,6 +100,14 @@ func TestSyncParamsToURL(t *testing.T) {
 			},
 			expected: "https://example.com/api",
 		},
+		{
+			name:   "preserve variable template tokens",
+			rawURL: "{{base_url}}/items",
+			params: []KeyValuePair{
+				{Key: "token", Value: "{{jwt_token}}", Enabled: true},
+			},
+			expected: "{{base_url}}/items?token={{jwt_token}}",
+		},
 	}
 
 	for _, tc := range tests {
@@ -109,5 +117,35 @@ func TestSyncParamsToURL(t *testing.T) {
 				t.Errorf("got %q, expected %q", got, tc.expected)
 			}
 		})
+	}
+}
+
+func TestMergeURLParams(t *testing.T) {
+	existing := []KeyValuePair{
+		{Key: "page", Value: "1", Enabled: true, Description: "Current page"},
+		{Key: "debug", Value: "true", Enabled: false, Description: "Debug mode flag"},
+	}
+
+	// 1. Update existing key and add new key from URL
+	newURL := "https://api.internal.com/v1/users?page=2&limit=50"
+	merged := MergeURLParams(existing, newURL)
+
+	if len(merged) != 3 {
+		t.Fatalf("expected 3 params (page, limit, and preserved debug), got %d", len(merged))
+	}
+
+	// Check page (value updated, description preserved)
+	if merged[0].Key != "page" || merged[0].Value != "2" || merged[0].Description != "Current page" || !merged[0].Enabled {
+		t.Errorf("page param not correctly merged: %+v", merged[0])
+	}
+
+	// Check limit (new enabled param)
+	if merged[1].Key != "limit" || merged[1].Value != "50" || !merged[1].Enabled {
+		t.Errorf("limit param not correctly added: %+v", merged[1])
+	}
+
+	// Check debug (disabled param preserved)
+	if merged[2].Key != "debug" || merged[2].Value != "true" || merged[2].Enabled || merged[2].Description != "Debug mode flag" {
+		t.Errorf("debug disabled param not preserved: %+v", merged[2])
 	}
 }

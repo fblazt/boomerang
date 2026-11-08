@@ -151,7 +151,7 @@ func SendButton(c *ui.Context, onClick func()) ui.Element {
 		AlignItems(ui.Center).
 		Focusable()
 
-	if btn.Clicked() && onClick != nil {
+	if (btn.Clicked() || btn.Shortcut(ui.Cmd, ui.KeyEnter)) && onClick != nil {
 		onClick()
 	}
 
@@ -199,7 +199,7 @@ func CancelButton(c *ui.Context, onClick func()) ui.Element {
 		AlignItems(ui.Center).
 		Focusable()
 
-	if btn.Clicked() && onClick != nil {
+	if (btn.Clicked() || btn.Shortcut(0, ui.KeyEscape)) && onClick != nil {
 		onClick()
 	}
 
@@ -247,7 +247,7 @@ func SaveButton(c *ui.Context, onClick func()) ui.Element {
 		AlignItems(ui.Center).
 		Focusable()
 
-	if btn.Clicked() && onClick != nil {
+	if (btn.Clicked() || btn.Shortcut(ui.Cmd, ui.KeyS)) && onClick != nil {
 		onClick()
 	}
 

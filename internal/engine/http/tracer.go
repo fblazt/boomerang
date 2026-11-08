@@ -66,6 +66,18 @@ func (tc *TraceCollector) MarkBodyDone() {
 	tc.bodyDone = time.Now()
 }
 
+func durMs(start, end time.Time) int64 {
+	if start.IsZero() || end.IsZero() || !end.After(start) {
+		return 0
+	}
+	d := end.Sub(start)
+	ms := d.Milliseconds()
+	if ms == 0 && d > 0 {
+		return 1
+	}
+	return ms
+}
+
 // Telemetry calculates durations and returns a models.Telemetry struct.
 func (tc *TraceCollector) Telemetry() models.Telemetry {
 	now := time.Now()
@@ -73,38 +85,22 @@ func (tc *TraceCollector) Telemetry() models.Telemetry {
 		tc.bodyDone = now
 	}
 
-	var dns int64
-	if !tc.dnsStart.IsZero() && !tc.dnsDone.IsZero() && tc.dnsDone.After(tc.dnsStart) {
-		dns = tc.dnsDone.Sub(tc.dnsStart).Milliseconds()
-	}
+	dns := durMs(tc.dnsStart, tc.dnsDone)
+	tcp := durMs(tc.tcpStart, tc.tcpDone)
+	tlsHandshake := durMs(tc.tlsStart, tc.tlsDone)
 
-	var tcp int64
-	if !tc.tcpStart.IsZero() && !tc.tcpDone.IsZero() && tc.tcpDone.After(tc.tcpStart) {
-		tcp = tc.tcpDone.Sub(tc.tcpStart).Milliseconds()
-	}
-
-	var tlsHandshake int64
-	if !tc.tlsStart.IsZero() && !tc.tlsDone.IsZero() && tc.tlsDone.After(tc.tlsStart) {
-		tlsHandshake = tc.tlsDone.Sub(tc.tlsStart).Milliseconds()
-	}
-
-	var ttfb int64
 	refStart := tc.wroteReq
 	if refStart.IsZero() {
 		refStart = tc.totalStart
 	}
-	if !tc.firstByte.IsZero() && tc.firstByte.After(refStart) {
-		ttfb = tc.firstByte.Sub(refStart).Milliseconds()
-	}
-
-	var dl int64
-	if !tc.firstByte.IsZero() && !tc.bodyDone.IsZero() && tc.bodyDone.After(tc.firstByte) {
-		dl = tc.bodyDone.Sub(tc.firstByte).Milliseconds()
-	}
+	ttfb := durMs(refStart, tc.firstByte)
+	dl := durMs(tc.firstByte, tc.bodyDone)
 
 	total := tc.bodyDone.Sub(tc.totalStart).Milliseconds()
 	if total < 0 {
 		total = 0
+	} else if total == 0 && tc.bodyDone.After(tc.totalStart) {
+		total = 1
 	}
 
 	return models.Telemetry{

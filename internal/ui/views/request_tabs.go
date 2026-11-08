@@ -309,11 +309,17 @@ func renderBodyTab(c *ui.Context, state *models.AppState) {
 					Padding(8).
 					Border(1, theme.BorderSubtle).
 					Children(func() {
-						ui.TextArea(c, &state.ActiveRequest.Body).
+						ta := ui.TextArea(c, &bodyText).
 							Font(theme.FontMono).
 							FontSize(theme.SizeBase).
 							TextColor(theme.TextPrimary).
 							Grow(1)
+
+						if ta.Changed() {
+							state.Mutate(func(s *models.AppState) {
+								s.ActiveRequest.Body = bodyText
+							})
+						}
 					})
 
 			case "form-data":
@@ -359,12 +365,18 @@ func renderBodyTab(c *ui.Context, state *models.AppState) {
 							TextColor(theme.TextDim).
 							Width(80)
 
-						ui.TextInput(c, &state.ActiveRequest.Body).
+						binInput := ui.TextInput(c, &bodyText).
 							Font(theme.FontMono).
 							FontSize(theme.SizeBase).
 							TextColor(theme.TextPrimary).
 							Placeholder("/path/to/file.bin").
 							Grow(1)
+
+						if binInput.Changed() {
+							state.Mutate(func(s *models.AppState) {
+								s.ActiveRequest.Body = bodyText
+							})
+						}
 					})
 			}
 		})
@@ -373,6 +385,12 @@ func renderBodyTab(c *ui.Context, state *models.AppState) {
 func renderAuthTab(c *ui.Context, state *models.AppState) {
 	var authType string
 	var apiKeyIn string
+	var showSecret bool
+	var token string
+	var basicUser string
+	var basicPass string
+	var apiKeyKey string
+	var apiKeyValue string
 
 	state.View(func(s *models.AppState) {
 		authType = s.ActiveRequest.AuthType
@@ -383,7 +401,40 @@ func renderAuthTab(c *ui.Context, state *models.AppState) {
 		if apiKeyIn == "" {
 			apiKeyIn = "header"
 		}
+		showSecret = s.ShowAuthSecret
+		token = s.ActiveRequest.Token
+		basicUser = s.ActiveRequest.BasicUser
+		basicPass = s.ActiveRequest.BasicPassword
+		apiKeyKey = s.ActiveRequest.APIKeyKey
+		apiKeyValue = s.ActiveRequest.APIKeyValue
 	})
+
+	renderSecretToggle := func() {
+		showBtn := ui.Row(c).
+			Height(20).
+			PaddingX(6).
+			Radius(4).
+			Background(theme.SurfaceSubPlane).
+			Border(1, theme.BorderSubtle).
+			Center().
+			Focusable()
+
+		if showBtn.Clicked() {
+			state.ToggleAuthSecret()
+		}
+
+		showLabel := "SHOW"
+		if showSecret {
+			showLabel = "HIDE"
+		}
+		showBtn.Children(func() {
+			ui.Text(c, showLabel).
+				Font(theme.FontMono).
+				FontSize(9).
+				Bold().
+				TextColor(theme.RimFocus)
+		})
+	}
 
 	ui.Column(c).
 		Gap(12).
@@ -454,11 +505,18 @@ func renderAuthTab(c *ui.Context, state *models.AppState) {
 				ui.Column(c).
 					Gap(6).
 					Children(func() {
-						ui.Text(c, "Bearer Token").
-							Font(theme.FontSans).
-							FontSize(theme.SizeCaption).
-							Bold().
-							TextColor(theme.TextDim)
+						ui.Row(c).
+							AlignItems(ui.Center).
+							Children(func() {
+								ui.Text(c, "Bearer Token").
+									Font(theme.FontSans).
+									FontSize(theme.SizeCaption).
+									Bold().
+									TextColor(theme.TextDim)
+
+								ui.Box(c).Grow(1)
+								renderSecretToggle()
+							})
 
 						ui.Row(c).
 							Height(34).
@@ -471,61 +529,103 @@ func renderAuthTab(c *ui.Context, state *models.AppState) {
 								primitives.VariableChip(c, "Bearer")
 								ui.Box(c).Width(8)
 
-								ui.TextInput(c, &state.ActiveRequest.Token).
+								tokenInput := ui.TextInput(c, &token).
 									Font(theme.FontMono).
 									FontSize(theme.SizeBase).
 									TextColor(theme.RimFocus).
 									Placeholder("eyJh... or {{jwt_token}}").
 									Grow(1)
+
+								if !showSecret {
+									tokenInput.Password()
+								}
+
+								if tokenInput.Changed() {
+									state.Mutate(func(s *models.AppState) {
+										s.ActiveRequest.Token = token
+									})
+								}
 							})
 					})
 
 			case "basic":
-				ui.Row(c).
-					Gap(12).
+				ui.Column(c).
+					Gap(6).
 					Children(func() {
-						ui.Column(c).
-							Grow(1).
-							Gap(4).
+						ui.Row(c).
+							AlignItems(ui.Center).
 							Children(func() {
-								ui.Text(c, "Username").Font(theme.FontSans).FontSize(theme.SizeCaption).Bold().TextColor(theme.TextDim)
-								ui.Row(c).
-									Height(34).
-									Radius(6).
-									Background(theme.SurfaceCardTop).
-									Border(1, theme.BorderSubtle).
-									PaddingX(10).
-									AlignItems(ui.Center).
-									Children(func() {
-										ui.TextInput(c, &state.ActiveRequest.BasicUser).
-											Font(theme.FontMono).
-											FontSize(theme.SizeBase).
-											TextColor(theme.TextPrimary).
-											Placeholder("username").
-											Grow(1)
-									})
+								ui.Text(c, "Basic Authentication").
+									Font(theme.FontSans).
+									FontSize(theme.SizeCaption).
+									Bold().
+									TextColor(theme.TextDim)
+
+								ui.Box(c).Grow(1)
+								renderSecretToggle()
 							})
 
-						ui.Column(c).
-							Grow(1).
-							Gap(4).
+						ui.Row(c).
+							Gap(12).
 							Children(func() {
-								ui.Text(c, "Password").Font(theme.FontSans).FontSize(theme.SizeCaption).Bold().TextColor(theme.TextDim)
-								ui.Row(c).
-									Height(34).
-									Radius(6).
-									Background(theme.SurfaceCardTop).
-									Border(1, theme.BorderSubtle).
-									PaddingX(10).
-									AlignItems(ui.Center).
+								ui.Column(c).
+									Grow(1).
+									Gap(4).
 									Children(func() {
-										ui.TextInput(c, &state.ActiveRequest.BasicPassword).
-											Password().
-											Font(theme.FontMono).
-											FontSize(theme.SizeBase).
-											TextColor(theme.TextPrimary).
-											Placeholder("password").
-											Grow(1)
+										ui.Text(c, "Username").Font(theme.FontSans).FontSize(theme.SizeCaption).Bold().TextColor(theme.TextDim)
+										ui.Row(c).
+											Height(34).
+											Radius(6).
+											Background(theme.SurfaceCardTop).
+											Border(1, theme.BorderSubtle).
+											PaddingX(10).
+											AlignItems(ui.Center).
+											Children(func() {
+												userInput := ui.TextInput(c, &basicUser).
+													Font(theme.FontMono).
+													FontSize(theme.SizeBase).
+													TextColor(theme.TextPrimary).
+													Placeholder("username").
+													Grow(1)
+
+												if userInput.Changed() {
+													state.Mutate(func(s *models.AppState) {
+														s.ActiveRequest.BasicUser = basicUser
+													})
+												}
+											})
+									})
+
+								ui.Column(c).
+									Grow(1).
+									Gap(4).
+									Children(func() {
+										ui.Text(c, "Password").Font(theme.FontSans).FontSize(theme.SizeCaption).Bold().TextColor(theme.TextDim)
+										ui.Row(c).
+											Height(34).
+											Radius(6).
+											Background(theme.SurfaceCardTop).
+											Border(1, theme.BorderSubtle).
+											PaddingX(10).
+											AlignItems(ui.Center).
+											Children(func() {
+												passInput := ui.TextInput(c, &basicPass).
+													Font(theme.FontMono).
+													FontSize(theme.SizeBase).
+													TextColor(theme.TextPrimary).
+													Placeholder("password").
+													Grow(1)
+
+												if !showSecret {
+													passInput.Password()
+												}
+
+												if passInput.Changed() {
+													state.Mutate(func(s *models.AppState) {
+														s.ActiveRequest.BasicPassword = basicPass
+													})
+												}
+											})
 									})
 							})
 					})
@@ -534,6 +634,19 @@ func renderAuthTab(c *ui.Context, state *models.AppState) {
 				ui.Column(c).
 					Gap(8).
 					Children(func() {
+						ui.Row(c).
+							AlignItems(ui.Center).
+							Children(func() {
+								ui.Text(c, "API Key Credentials").
+									Font(theme.FontSans).
+									FontSize(theme.SizeCaption).
+									Bold().
+									TextColor(theme.TextDim)
+
+								ui.Box(c).Grow(1)
+								renderSecretToggle()
+							})
+
 						ui.Row(c).
 							Gap(12).
 							Children(func() {
@@ -550,12 +663,18 @@ func renderAuthTab(c *ui.Context, state *models.AppState) {
 											PaddingX(10).
 											AlignItems(ui.Center).
 											Children(func() {
-												ui.TextInput(c, &state.ActiveRequest.APIKeyKey).
+												keyInput := ui.TextInput(c, &apiKeyKey).
 													Font(theme.FontMono).
 													FontSize(theme.SizeBase).
 													TextColor(theme.TextPrimary).
 													Placeholder("X-API-Key").
 													Grow(1)
+
+												if keyInput.Changed() {
+													state.Mutate(func(s *models.AppState) {
+														s.ActiveRequest.APIKeyKey = apiKeyKey
+													})
+												}
 											})
 									})
 
@@ -572,12 +691,22 @@ func renderAuthTab(c *ui.Context, state *models.AppState) {
 											PaddingX(10).
 											AlignItems(ui.Center).
 											Children(func() {
-												ui.TextInput(c, &state.ActiveRequest.APIKeyValue).
+												valInput := ui.TextInput(c, &apiKeyValue).
 													Font(theme.FontMono).
 													FontSize(theme.SizeBase).
 													TextColor(theme.RimFocus).
 													Placeholder("secret_key_123").
 													Grow(1)
+
+												if !showSecret {
+													valInput.Password()
+												}
+
+												if valInput.Changed() {
+													state.Mutate(func(s *models.AppState) {
+														s.ActiveRequest.APIKeyValue = apiKeyValue
+													})
+												}
 											})
 									})
 							})

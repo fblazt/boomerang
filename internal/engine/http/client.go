@@ -9,6 +9,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -75,10 +77,23 @@ func (c *Client) Execute(ctx context.Context, req models.RequestModel) (*models.
 
 	// If API Key in query param
 	if req.AuthType == "apikey" && req.APIKeyIn == "query" && req.APIKeyKey != "" {
-		param := []models.KeyValuePair{{Key: req.APIKeyKey, Value: req.APIKeyValue, Enabled: true}}
-		// Parse existing and append
 		existing := models.SyncURLToParams(targetURL)
-		existing = append(existing, param...)
+		found := false
+		for i := range existing {
+			if existing[i].Key == req.APIKeyKey {
+				existing[i].Value = req.APIKeyValue
+				existing[i].Enabled = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			existing = append(existing, models.KeyValuePair{
+				Key:     req.APIKeyKey,
+				Value:   req.APIKeyValue,
+				Enabled: true,
+			})
+		}
 		targetURL = models.SyncParamsToURL(targetURL, existing)
 	}
 
@@ -98,6 +113,17 @@ func (c *Client) Execute(ctx context.Context, req models.RequestModel) (*models.
 		mw := multipart.NewWriter(&b)
 		for _, item := range req.FormData {
 			if item.Enabled && item.Key != "" {
+				if strings.HasPrefix(item.Value, "@") {
+					filePath := strings.TrimPrefix(item.Value, "@")
+					if fileBytes, err := os.ReadFile(filePath); err == nil {
+						filename := filepath.Base(filePath)
+						part, err := mw.CreateFormFile(item.Key, filename)
+						if err == nil {
+							_, _ = part.Write(fileBytes)
+							continue
+						}
+					}
+				}
 				_ = mw.WriteField(item.Key, item.Value)
 			}
 		}
@@ -115,7 +141,13 @@ func (c *Client) Execute(ctx context.Context, req models.RequestModel) (*models.
 		bodyReader = strings.NewReader(encoded)
 		autoContentType = "application/x-www-form-urlencoded"
 	case "binary":
-		bodyReader = strings.NewReader(req.Body)
+		if req.Body != "" {
+			if fileBytes, err := os.ReadFile(req.Body); err == nil {
+				bodyReader = bytes.NewReader(fileBytes)
+			} else {
+				bodyReader = strings.NewReader(req.Body)
+			}
+		}
 	default:
 		// "none" or empty
 		bodyReader = nil

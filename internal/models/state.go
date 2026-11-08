@@ -37,6 +37,7 @@ type AppState struct {
 	ActiveTab      string // params, headers, body, auth, settings
 	SidebarOpen    bool
 	CommandPalOpen bool
+	ShowAuthSecret bool
 }
 
 // NewAppState initializes an AppState with default values.
@@ -109,11 +110,11 @@ func (s *AppState) SetMethod(method string) {
 	})
 }
 
-// SetURL updates the URL string and syncs extracted parameters.
+// SetURL updates the URL string and syncs extracted parameters, preserving custom descriptions and disabled rows.
 func (s *AppState) SetURL(rawURL string) {
 	s.Mutate(func(state *AppState) {
 		state.ActiveRequest.URL = rawURL
-		state.ActiveRequest.Params = SyncURLToParams(rawURL)
+		state.ActiveRequest.Params = MergeURLParams(state.ActiveRequest.Params, rawURL)
 	})
 }
 
@@ -225,6 +226,13 @@ func (s *AppState) SetActiveEnv(env string) {
 	})
 }
 
+// ToggleAuthSecret flips visibility of masked passwords and tokens.
+func (s *AppState) ToggleAuthSecret() {
+	s.Mutate(func(state *AppState) {
+		state.ShowAuthSecret = !state.ShowAuthSecret
+	})
+}
+
 // SendRequest triggers dispatching ActiveRequest asynchronously with live timer updates.
 func (s *AppState) SendRequest() {
 	s.mu.Lock()
@@ -238,6 +246,10 @@ func (s *AppState) SendRequest() {
 	s.cancelFn = cancel
 	exec := s.executor
 	reqCopy := s.ActiveRequest
+	reqCopy.Params = append([]KeyValuePair(nil), s.ActiveRequest.Params...)
+	reqCopy.Headers = append([]KeyValuePair(nil), s.ActiveRequest.Headers...)
+	reqCopy.FormData = append([]KeyValuePair(nil), s.ActiveRequest.FormData...)
+	reqCopy.URLEncoded = append([]KeyValuePair(nil), s.ActiveRequest.URLEncoded...)
 	s.mu.Unlock()
 
 	s.RequestRedraw()
