@@ -15,44 +15,60 @@ func MainWorkspaceView(c *ui.Context, state *models.AppState) ui.Element {
 		Gap(14).
 		Background(theme.CanvasDeep).
 		Children(func() {
-			// 1. Elevated Request Bar (URL, Method, Chip, Send, Save)
-			primitives.ElevatedPlane(c, func() {
-				ui.Row(c).
-					AlignItems(ui.Center).
-					Gap(10).
-					Children(func() {
+			// 1. URL Bar Row (URL Input Plane + Send + Save)
+			ui.Row(c).
+				AlignItems(ui.Center).
+				Gap(8).
+				Children(func() {
+					// Elevated URL Bar Container with Method inside and PROD chip
+					primitives.InputPlane(c, true, false, func() {
 						state.View(func(s *models.AppState) {
 							primitives.KeycapBadge(c, s.ActiveRequest.Method)
 						})
 
-						// Elevated URL Bar Container
-						primitives.InputPlane(c, true, false, func() {
-							primitives.VariableChip(c, "{{base_url}}")
-							ui.Box(c).Width(6)
-							state.View(func(s *models.AppState) {
-								ui.Text(c, s.ActiveRequest.URL).
-									Font(theme.FontMono).
-									FontSize(theme.SizeBody).
-									TextColor(theme.TextPrimary)
-							})
+						ui.Box(c).Width(6)
+
+						primitives.VariableChip(c, "{{base_url}}")
+
+						ui.Box(c).Width(6)
+
+						state.View(func(s *models.AppState) {
+							ui.Text(c, s.ActiveRequest.URL).
+								Font(theme.FontMono).
+								FontSize(theme.SizeBody).
+								TextColor(theme.TextPrimary)
 						})
 
 						ui.Box(c).Grow(1)
 
-						// Action Buttons: Send + Save
-						primitives.PrimaryButton(c, "Send", func() {
-							state.Mutate(func(s *models.AppState) {
-								s.IsLoading = true
-							})
+						// Environment indicator chip on the right inside input bar
+						state.View(func(s *models.AppState) {
+							ui.Row(c).
+								AlignItems(ui.Center).
+								Gap(5).
+								Children(func() {
+									ui.Box(c).Size(6, 6).Radius(3).Background(theme.RimFocus)
+									ui.Text(c, s.ActiveEnv).
+										Font(theme.FontMono).
+										FontSize(theme.SizeBadge).
+										TextColor(theme.TextMuted)
+								})
 						})
-						primitives.ShortcutCap(c, "⌘↵")
+					}).Grow(1)
 
-						ui.Box(c).Width(4)
-
-						primitives.SecondaryButton(c, "Save", func() {})
-						primitives.ShortcutCap(c, "⌘S")
+					// Action Buttons: Send + Save
+					primitives.PrimaryButton(c, "Send", func() {
+						state.Mutate(func(s *models.AppState) {
+							s.IsLoading = true
+						})
 					})
-			})
+					primitives.ShortcutCap(c, "⌘↵")
+
+					ui.Box(c).Width(4)
+
+					primitives.SecondaryButton(c, "Save", func() {})
+					primitives.ShortcutCap(c, "⌘S")
+				})
 
 			// 2. Request Configuration Tabs (Params, Headers, Body, Auth, Settings)
 			renderRequestTabs(c)
