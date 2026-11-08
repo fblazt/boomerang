@@ -2,9 +2,11 @@ package app
 
 import (
 	"log"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
 	"github.com/fblazt/boomerang/internal/ui/catalog"
 	"github.com/fblazt/boomerang/internal/ui/theme"
 	"github.com/fblazt/boomerang/internal/ui/views"
@@ -40,9 +42,11 @@ type App struct {
 
 // NewApp creates a new application instance.
 func NewApp(opts Options) *App {
+	st := NewAppState(nil)
+	st.SetExecutor(enginehttp.NewClient(30 * time.Second))
 	return &App{
 		opts:  opts,
-		state: NewAppState(nil),
+		state: st,
 	}
 }
 
