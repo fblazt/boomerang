@@ -160,6 +160,32 @@ func KeycapBadge(c *ui.Context, verb string) ui.Element {
 		})
 }
 
+// DropdownKeycapBadge renders a 3D tactile badge with a dropdown chevron (Brilliant Frame 307).
+func DropdownKeycapBadge(c *ui.Context, verb string) ui.Element {
+	s := GetVerbKeycapStyle(verb)
+	return ui.Row(c).
+		Height(22).
+		PaddingX(8).
+		Gap(5).
+		Radius(5).
+		LinearGradient(ui.LinearGradient{From: s.BgFrom, To: s.BgTo, Angle: 180}).
+		Border(1, s.BorderColor).
+		Shadow(0, 2, 0, 0, s.ShadowColor).
+		Center().
+		Children(func() {
+			ui.Text(c, verb).
+				Font(theme.FontMono).
+				FontSize(theme.SizeBadge).
+				Bold().
+				TextColor(s.TextColor)
+
+			ui.Text(c, "▾").
+				Font(theme.FontSans).
+				FontSize(theme.SizeCaption).
+				TextColor(s.TextColor)
+		})
+}
+
 // StatusCodeBadge renders a 3D tactile badge for HTTP status codes (e.g. "200 OK", "502 ERR").
 func StatusCodeBadge(c *ui.Context, code int, text string) ui.Element {
 	s := GetStatusKeycapStyle(code)

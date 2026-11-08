@@ -60,3 +60,22 @@ func InputPlane(c *ui.Context, focused bool, hasError bool, children func()) ui.
 		AlignItems(ui.Center).
 		Children(children)
 }
+
+// UrlBarInputPlane builds the unified URL bar input container strictly matching Brilliant Frame 305/514:
+// Height 36px, radius 6px, linear-gradient(#1E222E -> #171A24), 1px border rgba(255,255,255,0.14),
+// shadow y:4 blur:12 o:0.45, padding top: 0, right: 10, bottom: 0, left: 8.
+func UrlBarInputPlane(c *ui.Context, children func()) ui.Element {
+	return ui.Row(c).
+		Height(36).
+		Radius(6).
+		Padding(0, 10, 0, 8).
+		LinearGradient(ui.LinearGradient{
+			From:  theme.SurfacePlaneTop,
+			To:    theme.SurfacePlaneBottom,
+			Angle: 180,
+		}).
+		Border(1, theme.BorderMedium).
+		Shadow(0, 4, 12, 0, ui.RGBA(0, 0, 0, 0.45)).
+		AlignItems(ui.Center).
+		Children(children)
+}

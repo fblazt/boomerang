@@ -15,22 +15,22 @@ func MainWorkspaceView(c *ui.Context, state *models.AppState) ui.Element {
 		Gap(14).
 		Background(theme.CanvasDeep).
 		Children(func() {
-			// 1. URL Bar Row (URL Input Plane + Send + Save)
+			// 1. URL Bar Row (URL Input Plane + Send + Save) strictly following Brilliant Frame 304-313
 			ui.Row(c).
 				AlignItems(ui.Center).
 				Gap(8).
 				Children(func() {
 					// Elevated URL Bar Container with Method inside and PROD chip
-					primitives.InputPlane(c, true, false, func() {
+					primitives.UrlBarInputPlane(c, func() {
 						state.View(func(s *models.AppState) {
-							primitives.KeycapBadge(c, s.ActiveRequest.Method)
+							primitives.DropdownKeycapBadge(c, s.ActiveRequest.Method)
 						})
 
-						ui.Box(c).Width(6)
+						ui.Box(c).Width(10)
 
 						primitives.VariableChip(c, "{{base_url}}")
 
-						ui.Box(c).Width(6)
+						ui.Box(c).Width(8)
 
 						state.View(func(s *models.AppState) {
 							ui.Text(c, s.ActiveRequest.URL).
@@ -41,7 +41,7 @@ func MainWorkspaceView(c *ui.Context, state *models.AppState) ui.Element {
 
 						ui.Box(c).Grow(1)
 
-						// Environment indicator chip on the right inside input bar
+						// Environment indicator chip on the right inside input bar (Brilliant Frame 308)
 						state.View(func(s *models.AppState) {
 							ui.Row(c).
 								AlignItems(ui.Center).
@@ -56,18 +56,14 @@ func MainWorkspaceView(c *ui.Context, state *models.AppState) ui.Element {
 						})
 					}).Grow(1)
 
-					// Action Buttons: Send + Save
-					primitives.PrimaryButton(c, "Send", func() {
+					// Action Buttons: Send + Save with integrated shortcut caps
+					primitives.SendButton(c, func() {
 						state.Mutate(func(s *models.AppState) {
 							s.IsLoading = true
 						})
 					})
-					primitives.ShortcutCap(c, "⌘↵")
 
-					ui.Box(c).Width(4)
-
-					primitives.SecondaryButton(c, "Save", func() {})
-					primitives.ShortcutCap(c, "⌘S")
+					primitives.SaveButton(c, func() {})
 				})
 
 			// 2. Request Configuration Tabs (Params, Headers, Body, Auth, Settings)
