@@ -5,7 +5,9 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/fblazt/boomerang/internal/ui/catalog"
 	"github.com/fblazt/boomerang/internal/ui/theme"
+	"github.com/fblazt/boomerang/internal/ui/views"
 )
 
 // Options defines desktop application bootstrap options.
@@ -76,17 +78,14 @@ func (a *App) View(c *ui.Context) {
 	// Bind reactive services for async background redraws
 	a.state.BindServices(c.Services())
 
-	// Root window canvas layout
-	ui.Column(c).
-		Grow(1).
-		Background(theme.CanvasBase).
-		Children(func() {
-			// Titlebar / Top Navigation Header
-			a.renderTitlebar(c)
+	// If preview mode is activated, display Component Catalog
+	if a.opts.Preview == "components" {
+		catalog.ComponentCatalogView(c)
+		return
+	}
 
-			// Workspace Body Canvas
-			a.renderWorkspace(c)
-		})
+	// Full three-pane application shell
+	views.ShellView(c, a.state)
 }
 
 func (a *App) renderTitlebar(c *ui.Context) {
