@@ -182,6 +182,54 @@ func SendButton(c *ui.Context, onClick func()) ui.Element {
 	return btn
 }
 
+// CancelButton renders an in-flight cancel button with embedded Esc shortcut cap.
+func CancelButton(c *ui.Context, onClick func()) ui.Element {
+	btn := ui.Row(c).
+		Height(36).
+		PaddingX(14).
+		Gap(6).
+		Radius(6).
+		LinearGradient(ui.LinearGradient{
+			From:  ui.RGB(0x99, 0x1B, 0x1B),
+			To:    ui.RGB(0x7F, 0x1D, 0x1D),
+			Angle: 180,
+		}).
+		Border(1, ui.RGBA(248, 113, 113, 0.40)).
+		Shadow(0, 4, 10, 0, ui.RGBA(0, 0, 0, 0.50)).
+		AlignItems(ui.Center).
+		Focusable()
+
+	if btn.Clicked() && onClick != nil {
+		onClick()
+	}
+
+	btn.Children(func() {
+		ui.Text(c, "Cancel").
+			Font(theme.FontSans).
+			FontSize(theme.SizeBody).
+			Bold().
+			TextColor(theme.TextPrimary)
+
+		// Esc cap embedded inside button
+		ui.Row(c).
+			Height(18).
+			PaddingX(5).
+			Radius(4).
+			Background(ui.RGBA(0x0F, 0x17, 0x2A, 0.35)).
+			Border(1, ui.RGBA(255, 255, 255, 0.20)).
+			Center().
+			Children(func() {
+				ui.Text(c, "Esc").
+					Font(theme.FontMono).
+					FontSize(theme.SizeShortcut).
+					Bold().
+					TextColor(ui.RGB(0xFE, 0xCA, 0xCA))
+			})
+	})
+
+	return btn
+}
+
 // SaveButton composite button with embedded ⌘S shortcut cap (Brilliant Frame 312/313).
 func SaveButton(c *ui.Context, onClick func()) ui.Element {
 	btn := ui.Row(c).
