@@ -67,3 +67,19 @@ func TestApp_ViewHeadlessRender(t *testing.T) {
 		t.Fatal("expected updated endpoint in workspace")
 	}
 }
+
+func TestApp_PreviewComponents(t *testing.T) {
+	opts := app.DefaultOptions()
+	opts.Preview = "components"
+	application := app.NewApp(opts)
+
+	tt := ui.NewTester(application.View, 1440, 900)
+	tt.Frame()
+
+	if !tt.HasText("Boomerang Component Catalog") {
+		t.Fatal("expected Component Catalog view in preview mode")
+	}
+	if !tt.HasText("1. 3D Keycap Badges") {
+		t.Fatal("expected 3D Keycap Badges section in preview mode")
+	}
+}
