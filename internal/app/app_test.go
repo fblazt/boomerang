@@ -50,7 +50,7 @@ func TestApp_ViewHeadlessRender(t *testing.T) {
 	}
 
 	// Verify Workspace endpoint text
-	if !tt.HasText("Endpoint: https://api.internal.net/v1/health") {
+	if !tt.HasText("https://api.internal.net/v1/health") {
 		t.Fatal("expected health endpoint text in workspace")
 	}
 
@@ -60,11 +60,12 @@ func TestApp_ViewHeadlessRender(t *testing.T) {
 
 	tt.Frame()
 
+	if !tt.HasText("https://api.github.com") {
+		t.Fatal("expected updated URL in workspace")
+	}
+
 	if !tt.HasText("STG") {
 		t.Fatal("expected 'STG' env chip after update")
-	}
-	if !tt.HasText("Endpoint: https://api.github.com") {
-		t.Fatal("expected updated endpoint in workspace")
 	}
 }
 

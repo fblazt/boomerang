@@ -103,6 +103,37 @@ func SplitButton(c *ui.Context, label string, onMainClick func(), onMenuClick fu
 	return container
 }
 
+// SecondaryButton renders an elevated neutral button with linear gradient and subtle border.
+func SecondaryButton(c *ui.Context, label string, onClick func()) ui.Element {
+	btn := ui.Row(c).
+		Height(32).
+		PaddingX(12).
+		Radius(6).
+		LinearGradient(ui.LinearGradient{
+			From:  theme.SurfaceHover,
+			To:    theme.SurfaceActive,
+			Angle: 180,
+		}).
+		Border(1, theme.BorderMedium).
+		Shadow(0, 2, 0, 0, ui.RGB(0x07, 0x08, 0x0C)).
+		Center().
+		Focusable()
+
+	if btn.Clicked() && onClick != nil {
+		onClick()
+	}
+
+	btn.Children(func() {
+		ui.Text(c, label).
+			Font(theme.FontSans).
+			FontSize(theme.SizeBody).
+			Bold().
+			TextColor(theme.TextPrimary)
+	})
+
+	return btn
+}
+
 // IconButton renders a compact tactile icon / glyph button.
 func IconButton(c *ui.Context, icon string, tooltip string, onClick func()) ui.Element {
 	btn := ui.Row(c).

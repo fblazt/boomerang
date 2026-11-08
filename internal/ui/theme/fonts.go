@@ -11,6 +11,7 @@ const (
 const (
 	SizeShortcut = float32(9)
 	SizeBadge    = float32(10)
+	SizeCaption  = float32(10)
 	SizeToken    = float32(11)
 	SizeBase     = float32(12)
 	SizeBody     = float32(13)
