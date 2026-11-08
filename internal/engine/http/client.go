@@ -159,25 +159,33 @@ func (c *Client) Execute(ctx context.Context, req models.RequestModel) (*models.
 		}
 	}
 
-	startTime := time.Now()
+	// Trace collector
+	traceCollector := NewTraceCollector()
+	tracedCtx := WithTrace(httpReq.Context(), traceCollector)
+	httpReq = httpReq.WithContext(tracedCtx)
+
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
+		traceCollector.MarkBodyDone()
+		telemetry := traceCollector.Telemetry()
 		return &models.ResponseModel{
-			Error: err.Error(),
+			Error:     err.Error(),
+			Telemetry: telemetry,
 		}, err
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, readErr := io.ReadAll(resp.Body)
-	totalDuration := time.Since(startTime)
+	traceCollector.MarkBodyDone()
+	telemetry := traceCollector.Telemetry()
 
 	if readErr != nil {
 		return &models.ResponseModel{
 			StatusCode: resp.StatusCode,
 			StatusText: resp.Status,
-			Duration:   totalDuration,
 			Proto:      resp.Proto,
 			Error:      readErr.Error(),
+			Telemetry:  telemetry,
 		}, readErr
 	}
 
@@ -189,10 +197,11 @@ func (c *Client) Execute(ctx context.Context, req models.RequestModel) (*models.
 	return &models.ResponseModel{
 		StatusCode: resp.StatusCode,
 		StatusText: resp.Status,
-		Duration:   totalDuration,
+		Duration:   time.Duration(telemetry.Total) * time.Millisecond,
 		SizeBytes:  int64(len(bodyBytes)),
 		Proto:      resp.Proto,
 		Headers:    respHeaders,
 		Body:       string(bodyBytes),
+		Telemetry:  telemetry,
 	}, nil
 }

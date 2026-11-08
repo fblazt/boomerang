@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"testing"
 	"time"
 
@@ -271,4 +272,25 @@ type cancelRoundTripper struct{}
 func (c *cancelRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	<-req.Context().Done()
 	return nil, req.Context().Err()
+}
+
+func TestTracer_Durations(t *testing.T) {
+	tc := NewTraceCollector()
+	tr := tc.ClientTrace()
+
+	tr.DNSStart(httptrace.DNSStartInfo{})
+	time.Sleep(2 * time.Millisecond)
+	tr.DNSDone(httptrace.DNSDoneInfo{})
+
+	tr.ConnectStart("", "")
+	time.Sleep(2 * time.Millisecond)
+	tr.ConnectDone("", "", nil)
+
+	tr.GotFirstResponseByte()
+	tc.MarkBodyDone()
+
+	telem := tc.Telemetry()
+	if telem.Total < 0 {
+		t.Errorf("expected total >= 0, got %d", telem.Total)
+	}
 }
