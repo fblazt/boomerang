@@ -2,8 +2,10 @@ package catalog
 
 import (
 	"github.com/egoist/mygo/ui"
+	"github.com/fblazt/boomerang/internal/models"
 	"github.com/fblazt/boomerang/internal/ui/primitives"
 	"github.com/fblazt/boomerang/internal/ui/theme"
+	"github.com/fblazt/boomerang/internal/ui/views"
 )
 
 // ComponentCatalogView renders an interactive preview showcase of all design system components.
@@ -45,6 +47,9 @@ func ComponentCatalogView(c *ui.Context) ui.Element {
 
 					// 4. Keyboard Shortcut Caps & Variable Token Chips
 					renderChipsAndShortcutsSection(c)
+
+					// 5. Key-Value Table & Telemetry Waterfall
+					renderKVAndTelemetrySection(c)
 				})
 		})
 }
@@ -183,6 +188,37 @@ func renderChipsAndShortcutsSection(c *ui.Context) {
 						primitives.ShortcutCap(c, "⌘K")
 						primitives.ShortcutCap(c, "⌘1")
 					})
+			})
+	})
+}
+
+func renderKVAndTelemetrySection(c *ui.Context) {
+	primitives.ElevatedPlane(c, func() {
+		ui.Column(c).
+			Gap(12).
+			Children(func() {
+				ui.Text(c, "5. Key-Value Table & Telemetry Waterfall").
+					Font(theme.FontSans).
+					FontSize(theme.SizeHeading).
+					Bold().
+					TextColor(theme.TextPrimary)
+
+				ui.Row(c).
+					Gap(10).
+					AlignItems(ui.Center).
+					Children(func() {
+						primitives.SendButton(c, nil)
+						primitives.CancelButton(c, nil)
+					})
+
+				views.TelemetryWaterfallBar(c, models.Telemetry{
+					DNS:      12,
+					TCP:      19,
+					TLS:      28,
+					TTFB:     42,
+					Download: 19,
+					Total:    120,
+				})
 			})
 	})
 }
