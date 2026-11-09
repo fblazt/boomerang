@@ -6,6 +6,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/fblazt/boomerang/internal/engine/env"
 	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
 	"github.com/fblazt/boomerang/internal/ui/catalog"
 	"github.com/fblazt/boomerang/internal/ui/theme"
@@ -44,6 +45,7 @@ type App struct {
 func NewApp(opts Options) *App {
 	st := NewAppState(nil)
 	st.SetExecutor(enginehttp.NewClient(30 * time.Second))
+	st.SetInterpolator(env.InterpolateRequest, env.Interpolate)
 	return &App{
 		opts:  opts,
 		state: st,

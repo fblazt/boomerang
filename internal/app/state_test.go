@@ -1,12 +1,14 @@
 package app_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/app"
+	"github.com/fblazt/boomerang/internal/engine/env"
 	"github.com/fblazt/boomerang/internal/models"
 )
 
@@ -117,5 +119,52 @@ func TestAppState_HeadlessTesterReactive(t *testing.T) {
 	}
 	if !tt.HasText("Status: Sending...") {
 		t.Fatal("expected 'Status: Sending...'")
+	}
+}
+
+type mockExecutor struct {
+	lastReq models.RequestModel
+	done    chan struct{}
+}
+
+func (m *mockExecutor) Execute(ctx context.Context, req models.RequestModel) (*models.ResponseModel, error) {
+	m.lastReq = req
+	close(m.done)
+	return &models.ResponseModel{
+		StatusCode: 200,
+		StatusText: "200 OK",
+	}, nil
+}
+
+func TestAppState_SendRequest_WithInterpolation(t *testing.T) {
+	state := app.NewAppState(nil)
+	state.SetInterpolator(env.InterpolateRequest, env.Interpolate)
+
+	state.ActiveEnv = "PROD"
+	state.ActiveRequest.URL = "{{base_url}}/users"
+	state.ActiveRequest.Headers = []models.KeyValuePair{
+		{Key: "Authorization", Value: "Bearer {{api_key}}", Enabled: true},
+	}
+
+	mockExec := &mockExecutor{done: make(chan struct{})}
+	state.SetExecutor(mockExec)
+
+	state.SendRequest()
+
+	select {
+	case <-mockExec.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("mock execution timed out")
+	}
+
+	if mockExec.lastReq.URL != "https://api.internal.net/v1/users" {
+		t.Fatalf("expected interpolated URL 'https://api.internal.net/v1/users', got %q", mockExec.lastReq.URL)
+	}
+	if len(mockExec.lastReq.Headers) != 1 || mockExec.lastReq.Headers[0].Value != "Bearer bk_live_94aB882c0f12" {
+		t.Fatalf("expected interpolated header 'Bearer bk_live_94aB882c0f12', got %v", mockExec.lastReq.Headers)
+	}
+	// ActiveRequest should remain untouched (templated)
+	if state.ActiveRequest.URL != "{{base_url}}/users" {
+		t.Fatalf("ActiveRequest.URL should remain templated, got %q", state.ActiveRequest.URL)
 	}
 }

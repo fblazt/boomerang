@@ -31,7 +31,12 @@ type AppState struct {
 	ElapsedMs      int64
 
 	// Active Environment
-	ActiveEnv string
+	ActiveEnv    string
+	Environments []Environment
+
+	// Template Interpolator hooks
+	interpolateFn    func(req RequestModel, vars map[string]string) RequestModel
+	interpolateStrFn func(template string, vars map[string]string) string
 
 	// Navigation & View Mode
 	ActiveTab      string // params, headers, body, auth, settings
@@ -56,9 +61,10 @@ func NewAppState(redrawFn func()) *AppState {
 			BodyType: "json",
 			AuthType: "none",
 		},
-		ActiveEnv:   "PROD",
-		ActiveTab:   "params",
-		SidebarOpen: true,
+		ActiveEnv:    "PROD",
+		Environments: DefaultEnvironments(),
+		ActiveTab:    "params",
+		SidebarOpen:  true,
 	}
 }
 
@@ -74,6 +80,69 @@ func (s *AppState) SetExecutor(exec RequestExecutor) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.executor = exec
+}
+
+// SetInterpolator registers the template interpolation functions for request execution and string resolution.
+func (s *AppState) SetInterpolator(
+	reqFn func(req RequestModel, vars map[string]string) RequestModel,
+	strFn func(template string, vars map[string]string) string,
+) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.interpolateFn = reqFn
+	s.interpolateStrFn = strFn
+}
+
+// GetActiveVariables returns a map of all enabled variables in the active environment.
+func (s *AppState) GetActiveVariables() map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.getActiveVariablesLocked()
+}
+
+func (s *AppState) getActiveVariablesLocked() map[string]string {
+	vars := make(map[string]string)
+	for _, env := range s.Environments {
+		if env.Name == s.ActiveEnv {
+			for _, v := range env.Variables {
+				if v.Enabled {
+					val := v.CurrentValue
+					if val == "" {
+						val = v.InitialValue
+					}
+					vars[v.Key] = val
+				}
+			}
+			break
+		}
+	}
+	return vars
+}
+
+// GetActiveEnvironment returns a copy of the currently active Environment.
+func (s *AppState) GetActiveEnvironment() *Environment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, env := range s.Environments {
+		if env.Name == s.ActiveEnv {
+			envCopy := env
+			return &envCopy
+		}
+	}
+	return nil
+}
+
+// InterpolateActiveString resolves template variables in a string against active environment variables.
+func (s *AppState) InterpolateActiveString(template string) string {
+	s.mu.RLock()
+	strFn := s.interpolateStrFn
+	vars := s.getActiveVariablesLocked()
+	s.mu.RUnlock()
+
+	if strFn != nil {
+		return strFn(template, vars)
+	}
+	return template
 }
 
 // RequestRedraw safely triggers a frame re-render on the UI thread.
@@ -250,6 +319,11 @@ func (s *AppState) SendRequest() {
 	reqCopy.Headers = append([]KeyValuePair(nil), s.ActiveRequest.Headers...)
 	reqCopy.FormData = append([]KeyValuePair(nil), s.ActiveRequest.FormData...)
 	reqCopy.URLEncoded = append([]KeyValuePair(nil), s.ActiveRequest.URLEncoded...)
+
+	if s.interpolateFn != nil {
+		activeVars := s.getActiveVariablesLocked()
+		reqCopy = s.interpolateFn(reqCopy, activeVars)
+	}
 	s.mu.Unlock()
 
 	s.RequestRedraw()
