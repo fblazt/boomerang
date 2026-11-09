@@ -1,6 +1,8 @@
 package views
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/models"
 	"github.com/fblazt/boomerang/internal/ui/primitives"
@@ -42,18 +44,35 @@ func UrlBarView(c *ui.Context, state *models.AppState) ui.Element {
 
 				ui.Box(c).Width(10)
 
-				primitives.VariableChip(c, "{{base_url}}")
+				// Only display the variable chip if the URL actually starts with {{base_url}} (Brilliant Board 03).
+				// For full URLs (e.g. https://httpbin.org/get or Brilliant Board 01), render the clean URL directly.
+				var hasBaseURL bool
+				var editURL string
 
-				ui.Box(c).Width(8)
+				if strings.HasPrefix(currentURL, "{{base_url}}") {
+					hasBaseURL = true
+					editURL = strings.TrimPrefix(currentURL, "{{base_url}}")
+				} else {
+					editURL = currentURL
+				}
 
-				urlInput := ui.EditableText(c, &currentURL).
+				if hasBaseURL {
+					primitives.VariableChip(c, "{{base_url}}")
+					ui.Box(c).Width(8)
+				}
+
+				urlInput := ui.EditableText(c, &editURL).
 					Font(theme.FontMono).
 					FontSize(theme.SizeBody).
 					TextColor(theme.TextPrimary).
 					Grow(1)
 
 				if urlInput.Changed() {
-					state.SetURL(currentURL)
+					if hasBaseURL {
+						state.SetURL("{{base_url}}" + editURL)
+					} else {
+						state.SetURL(editURL)
+					}
 				}
 
 				// Environment indicator chip on the right inside input bar (Brilliant Frame 308)

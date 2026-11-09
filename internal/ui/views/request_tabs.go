@@ -89,23 +89,19 @@ func RequestTabsView(c *ui.Context, state *models.AppState) ui.Element {
 }
 
 func renderTabButton(c *ui.Context, label, badge string, active bool, onClick func()) {
-	borderBottom := float32(0)
-	borderColor := theme.BorderSubtle
+	borderColor := ui.Transparent
 	textColor := theme.TextMuted
-	bold := false
 
 	if active {
-		borderBottom = 2
 		borderColor = theme.RimFocus
 		textColor = theme.TextPrimary
-		bold = true
 	}
 
 	tab := ui.Row(c).
 		AlignItems(ui.Center).
 		Gap(6).
 		PaddingY(8).
-		BorderWidth(0, 0, borderBottom, 0).
+		BorderWidth(0, 0, 2, 0).
 		BorderColor(borderColor).
 		Focusable()
 
@@ -114,13 +110,13 @@ func renderTabButton(c *ui.Context, label, badge string, active bool, onClick fu
 	}
 
 	tab.Children(func() {
-		t := ui.Text(c, label).
+		// Use consistent Bold font weight for both active and inactive states
+		// to prevent text width expansion and horizontal layout shift on toggle.
+		ui.Text(c, label).
 			Font(theme.FontSans).
 			FontSize(theme.SizeBody).
+			Bold().
 			TextColor(textColor)
-		if bold {
-			t.Bold()
-		}
 
 		if badge != "" {
 			bg := theme.SurfaceSubPlane

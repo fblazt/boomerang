@@ -13,7 +13,7 @@ func TestShellView(t *testing.T) {
 	state := models.NewAppState(nil)
 	state.ActiveRequest.Name = "Test Request"
 	state.ActiveRequest.Method = "GET"
-	state.ActiveRequest.URL = "https://api.internal.net/v1/test"
+	state.ActiveRequest.URL = "{{base_url}}/v1/test"
 
 	tt := ui.NewTester(func(c *ui.Context) {
 		ShellView(c, state)
@@ -328,7 +328,7 @@ func TestMainWorkspaceView_QuerySync(t *testing.T) {
 func TestUrlBarView(t *testing.T) {
 	state := models.NewAppState(nil)
 	state.ActiveRequest.Method = "GET"
-	state.ActiveRequest.URL = "https://api.internal.net/v1/users"
+	state.ActiveRequest.URL = "{{base_url}}/v1/users"
 
 	tt := ui.NewTester(func(c *ui.Context) {
 		UrlBarView(c, state)
@@ -342,11 +342,21 @@ func TestUrlBarView(t *testing.T) {
 	if !tt.HasText("{{base_url}}") {
 		t.Fatal("expected {{base_url}} variable chip")
 	}
-	if !tt.HasText("https://api.internal.net/v1/users") {
+	if !tt.HasText("/v1/users") {
 		t.Fatal("expected URL text in bar")
 	}
 	if !tt.HasText("Send") {
 		t.Fatal("expected Send button")
+	}
+
+	// Verify that raw full URL does NOT show {{base_url}} chip
+	state.SetURL("https://httpbin.org/get")
+	tt.Frame()
+	if tt.HasText("{{base_url}}") {
+		t.Fatal("expected {{base_url}} chip to be hidden for raw URLs")
+	}
+	if !tt.HasText("https://httpbin.org/get") {
+		t.Fatal("expected raw URL text in bar")
 	}
 
 	// Click method badge to cycle to POST
