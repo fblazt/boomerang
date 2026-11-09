@@ -110,7 +110,22 @@ func (e *Engine) UpdateEnvironment(env models.Environment) error {
 
 	for i, existing := range e.environments {
 		if existing.ID == env.ID || strings.EqualFold(existing.Name, env.Name) {
+			oldName := existing.Name
 			e.environments[i] = env
+
+			// If environment was renamed, migrate vault secrets
+			if oldName != env.Name && e.vault != nil {
+				secrets := e.vault.ListSecrets(oldName)
+				for _, k := range secrets {
+					if secVal, err := e.vault.GetSecret(oldName, k); err == nil {
+						_ = e.vault.SetSecret(env.Name, k, secVal)
+						_ = e.vault.DeleteSecret(oldName, k)
+					}
+				}
+				if e.activeEnv == oldName {
+					e.activeEnv = env.Name
+				}
+			}
 			return nil
 		}
 	}
@@ -268,25 +283,68 @@ func (e *Engine) AddVariable(envName string, v models.Variable, secretPlaintext 
 }
 
 // UpdateVariable updates an existing variable's values or enabled state.
-func (e *Engine) UpdateVariable(envName string, v models.Variable, secretPlaintext string) error {
+// If oldKey is provided and differs from v.Key, the variable is renamed and vault keys are migrated.
+func (e *Engine) UpdateVariable(envName string, oldKey string, v models.Variable, secretPlaintext string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	lookupKey := oldKey
+	if lookupKey == "" {
+		lookupKey = v.Key
+	}
 
 	for i := range e.environments {
 		if strings.EqualFold(e.environments[i].Name, envName) {
 			for j := range e.environments[i].Variables {
-				if e.environments[i].Variables[j].Key == v.Key {
+				if e.environments[i].Variables[j].Key == lookupKey {
+					prevVar := e.environments[i].Variables[j]
+
+					// Case 1: Was secret, now text -> decrypt or take plaintext and remove from vault
+					if prevVar.Type == models.VariableTypeSecret && v.Type == models.VariableTypeText {
+						if e.vault != nil {
+							if dec, err := e.vault.GetSecret(envName, lookupKey); err == nil && dec != "" {
+								if secretPlaintext == "" {
+									v.CurrentValue = dec
+									v.InitialValue = dec
+								}
+							}
+							_ = e.vault.DeleteSecret(envName, lookupKey)
+						}
+					}
+
+					// Case 2: Was text, now secret -> move to vault and mask in memory
+					if prevVar.Type == models.VariableTypeText && v.Type == models.VariableTypeSecret {
+						plaintext := secretPlaintext
+						if plaintext == "" {
+							plaintext = v.CurrentValue
+						}
+						if e.vault != nil && plaintext != "" {
+							_ = e.vault.SetSecret(envName, v.Key, plaintext)
+							v.CurrentValue = MaskSecret(plaintext)
+							v.InitialValue = MaskSecret(v.InitialValue)
+						}
+					}
+
+					// Case 3: Remains secret
 					if v.Type == models.VariableTypeSecret && e.vault != nil {
+						if lookupKey != v.Key {
+							// Key renamed: migrate secret in vault
+							if sec, err := e.vault.GetSecret(envName, lookupKey); err == nil {
+								_ = e.vault.SetSecret(envName, v.Key, sec)
+								_ = e.vault.DeleteSecret(envName, lookupKey)
+							}
+						}
 						if secretPlaintext != "" {
 							_ = e.vault.SetSecret(envName, v.Key, secretPlaintext)
 							v.CurrentValue = MaskSecret(secretPlaintext)
 						}
 					}
+
 					e.environments[i].Variables[j] = v
 					return nil
 				}
 			}
-			return fmt.Errorf("variable %q not found in %q", v.Key, envName)
+			return fmt.Errorf("variable %q not found in %q", lookupKey, envName)
 		}
 	}
 	return fmt.Errorf("environment %q not found", envName)
@@ -356,6 +414,16 @@ func (e *Engine) GetResolvedVariables(envName string) (map[string]string, error)
 	return resolved, nil
 }
 
+// GetSecret retrieves a decrypted secret from the vault for the given environment and key.
+func (e *Engine) GetSecret(envName, key string) (string, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.vault == nil {
+		return "", fmt.Errorf("vault not configured")
+	}
+	return e.vault.GetSecret(envName, key)
+}
+
 // ExportEnvironment exports an environment to .env format.
 func (e *Engine) ExportEnvironment(envName string, maskSecrets bool) (string, error) {
 	env, err := e.GetEnvironment(envName)
@@ -372,15 +440,21 @@ func (e *Engine) ImportEnvironment(name string, dotEnvContent string) (*models.E
 		return nil, err
 	}
 
+	if e.vault != nil {
+		for i := range env.Variables {
+			if env.Variables[i].Type == models.VariableTypeSecret {
+				if secVal, ok := secrets[env.Variables[i].Key]; ok {
+					_ = e.vault.SetSecret(name, env.Variables[i].Key, secVal)
+					env.Variables[i].CurrentValue = MaskSecret(secVal)
+					env.Variables[i].InitialValue = MaskSecret(env.Variables[i].InitialValue)
+				}
+			}
+		}
+	}
+
 	if err := e.CreateEnvironment(*env); err != nil {
 		// If already exists, update
 		_ = e.UpdateEnvironment(*env)
-	}
-
-	if e.vault != nil {
-		for k, v := range secrets {
-			_ = e.vault.SetSecret(name, k, v)
-		}
 	}
 
 	return env, nil

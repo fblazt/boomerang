@@ -25,6 +25,9 @@ func EnvironmentDropdownMenu(c *ui.Context, state *models.AppState) ui.Element {
 	})
 
 	return ui.Column(c).
+		Absolute().
+		Top(32).
+		Right(0).
 		Width(280).
 		Padding(10).
 		Radius(8).

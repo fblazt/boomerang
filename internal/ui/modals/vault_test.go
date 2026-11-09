@@ -1,9 +1,11 @@
 package modals
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/fblazt/boomerang/internal/engine/env"
 	"github.com/fblazt/boomerang/internal/models"
 )
 
@@ -39,6 +41,16 @@ func TestVaultManagerModal_DirectRender(t *testing.T) {
 	}
 	if !tt.HasText("Transport Policy") {
 		t.Fatal("expected Transport Policy tab")
+	}
+
+	// Brilliant Board 05 Table columns
+	if !tt.HasText("INITIAL VALUE") || !tt.HasText("SCOPE") {
+		t.Fatal("expected INITIAL VALUE and SCOPE columns in table header")
+	}
+
+	// Export / Import .env actions
+	if !tt.HasText("Export .env") || !tt.HasText("Import .env") {
+		t.Fatal("expected Export .env and Import .env action buttons")
 	}
 
 	// Variable Rows
@@ -123,5 +135,44 @@ func TestVaultModalHost_ModalDismiss(t *testing.T) {
 
 	if state.ShowVaultModal {
 		t.Fatal("expected ShowVaultModal to be false after Close")
+	}
+}
+
+func TestVaultManagerModal_WithEngine(t *testing.T) {
+	state := models.NewAppState(nil)
+	vault, err := env.NewInMemorySecretVault("modal-vault-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := env.NewEngine(vault, models.DefaultEnvironments())
+	state.SetEnvEngine(engine)
+
+	state.ActiveVaultEnv = "PROD"
+	state.ShowVaultModal = true
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		VaultManagerModal(c, state)
+	}, 1000, 700)
+	tt.Frame()
+
+	// Click Export .env
+	if err := tt.Click("Export .env"); err != nil {
+		t.Fatalf("failed to click Export .env: %v", err)
+	}
+	tt.Frame()
+
+	clip := tt.Clipboard()
+	if !strings.Contains(clip, "base_url") || !strings.Contains(clip, "https://api.internal.net/v1") {
+		t.Fatalf("expected exported .env in clipboard, got: %s", clip)
+	}
+
+	// Click SHOW on api_key: should decrypt from vault
+	if err := tt.Click("SHOW"); err != nil {
+		t.Fatalf("failed to click SHOW: %v", err)
+	}
+	tt.Frame()
+
+	if !tt.HasText("bk_live_94aB882c0f12") {
+		t.Fatal("expected decrypted secret from vault to be displayed")
 	}
 }

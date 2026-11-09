@@ -173,7 +173,6 @@ func HeaderView(c *ui.Context, state *models.AppState) ui.Element {
 
 							// Dropdown menu if open
 							if isDropdownOpen {
-								ui.Box(c).Height(4)
 								EnvironmentDropdownMenu(c, state)
 							}
 						})

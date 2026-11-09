@@ -21,6 +21,11 @@ func TestMaskSecret(t *testing.T) {
 		{"sk_test_supersecret1234", "sk_test_••••••••1234"},
 		{"plainpassword123", "pla••••••••123"},
 		{"short1", "s••••••••1"},
+		// Edge cases where prefix and suffix meet or overlap: must NOT leak the secret!
+		{"12345_6789", "123••••••••789"},
+		{"sk_live_1234", "sk_••••••••234"},
+		// Multi-byte UTF-8 rune safety
+		{"日本語_秘密_値12345678", "日本語_秘密_••••••••5678"},
 	}
 
 	for _, tt := range tests {
@@ -164,5 +169,38 @@ func TestDotEnv_ExportAndImport(t *testing.T) {
 	}
 	if secrets["AUTH_TOKEN"] != "my_secret_token_12345" {
 		t.Fatalf("expected AUTH_TOKEN secret to be extracted, got %q", secrets["AUTH_TOKEN"])
+	}
+}
+
+func TestDotEnv_ImportAdvancedFormatting(t *testing.T) {
+	content := `
+# Environment comment
+export FOO=bar # inline comment
+GREETING="Hello\nWorld"
+SINGLE_QUOTED='single "quoted" value'
+# secret
+DB_PASS="p@ss#word"
+`
+	env, secrets, err := ImportDotEnv("ADVANCED", content)
+	if err != nil {
+		t.Fatalf("ImportDotEnv failed: %v", err)
+	}
+
+	varMap := make(map[string]string)
+	for _, v := range env.Variables {
+		varMap[v.Key] = v.CurrentValue
+	}
+
+	if varMap["FOO"] != "bar" {
+		t.Errorf("expected FOO to be 'bar' (stripped inline comment), got %q", varMap["FOO"])
+	}
+	if varMap["GREETING"] != "Hello\nWorld" {
+		t.Errorf("expected GREETING to be unescaped with newline, got %q", varMap["GREETING"])
+	}
+	if varMap["SINGLE_QUOTED"] != `single "quoted" value` {
+		t.Errorf("expected SINGLE_QUOTED value, got %q", varMap["SINGLE_QUOTED"])
+	}
+	if secrets["DB_PASS"] != "p@ss#word" {
+		t.Errorf("expected DB_PASS secret to be extracted, got %q", secrets["DB_PASS"])
 	}
 }

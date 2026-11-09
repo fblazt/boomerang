@@ -2,6 +2,7 @@ package modals
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/engine/env"
@@ -263,7 +264,7 @@ func renderEnvironmentDetailPane(
 			// Environment Header & Action Bar
 			ui.Row(c).
 				AlignItems(ui.Center).
-				Gap(10).
+				Gap(8).
 				Children(func() {
 					primitives.StatusDot(c, theme.EnvironmentColor(target.Name))
 
@@ -297,6 +298,53 @@ func renderEnvironmentDetailPane(
 								TextColor(theme.RimFocus)
 						})
 					}
+
+					// Export .env Button
+					exportBtn := ui.Row(c).
+						Height(26).
+						PaddingX(8).
+						Radius(5).
+						Background(theme.SurfaceCardTop).
+						Border(1, theme.BorderSubtle).
+						AlignItems(ui.Center).
+						Focusable()
+
+					if exportBtn.Clicked() {
+						if dotEnv, err := state.ExportDotEnv(target.Name, false); err == nil {
+							c.WriteClipboard(dotEnv)
+						}
+					}
+
+					exportBtn.Children(func() {
+						ui.Text(c, "Export .env").
+							Font(theme.FontSans).
+							FontSize(theme.SizeBadge).
+							TextColor(theme.TextSecondary)
+					})
+
+					// Import .env Button
+					importBtn := ui.Row(c).
+						Height(26).
+						PaddingX(8).
+						Radius(5).
+						Background(theme.SurfaceCardTop).
+						Border(1, theme.BorderSubtle).
+						AlignItems(ui.Center).
+						Focusable()
+
+					if importBtn.Clicked() {
+						clip := c.ReadClipboard()
+						if strings.Contains(clip, "=") {
+							_ = state.ImportDotEnv(target.Name, clip)
+						}
+					}
+
+					importBtn.Children(func() {
+						ui.Text(c, "Import .env").
+							Font(theme.FontSans).
+							FontSize(theme.SizeBadge).
+							TextColor(theme.TextSecondary)
+					})
 
 					// Duplicate Button
 					dupBtn := ui.Row(c).
@@ -401,7 +449,8 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 		Grow(1).
 		Gap(8).
 		Children(func() {
-			// Table Header
+			// Table Header strictly following Brilliant Board 05:
+			// Variable name, Initial value, Current value, Secret toggle, Scope.
 			ui.Row(c).
 				Height(26).
 				PaddingX(8).
@@ -409,11 +458,16 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 				Border(1, theme.BorderSubtle).
 				Radius(4).
 				AlignItems(ui.Center).
+				Gap(6).
 				Children(func() {
-					ui.Text(c, "VARIABLE NAME").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(160)
-					ui.Text(c, "TYPE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(80)
+					ui.Box(c).Width(16) // Checkbox spacer
+					ui.Text(c, "VARIABLE NAME").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(136)
+					ui.Text(c, "INITIAL VALUE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(126)
 					ui.Text(c, "CURRENT VALUE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Grow(1)
-					ui.Text(c, "ACTIONS").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(80)
+					ui.Text(c, "TYPE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(60)
+					ui.Text(c, "SECRET").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(46)
+					ui.Text(c, "SCOPE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(36)
+					ui.Box(c).Width(22) // Delete button spacer
 				})
 
 			// Variable Rows
@@ -424,7 +478,7 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 					for _, variableItem := range target.Variables {
 						v := variableItem
 						isSecret := v.Type == models.VariableTypeSecret
-						isRevealed := state.IsSecretRevealed(v.Key)
+						isRevealed := state.IsSecretRevealedForEnv(target.Name, v.Key)
 
 						row := ui.Row(c).
 							Height(32).
@@ -436,16 +490,105 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 							Gap(6)
 
 						row.Children(func() {
-							// Variable Key
-							ui.Text(c, v.Key).
+							// 1. Enabled Checkbox
+							chk := ui.Row(c).
+								Width(14).
+								Height(14).
+								Radius(3).
+								Center().
+								Focusable()
+
+							if v.Enabled {
+								chk.Background(theme.RimFocus)
+							} else {
+								chk.Border(1, theme.BorderSubtle)
+							}
+
+							if chk.Clicked() {
+								updated := v
+								updated.Enabled = !updated.Enabled
+								state.UpdateVariableInEnv(target.Name, v.Key, updated)
+							}
+
+							chk.Children(func() {
+								if v.Enabled {
+									ui.Text(c, "✓").
+										Font(theme.FontSans).
+										FontSize(9).
+										Bold().
+										TextColor(ui.RGB(0xFF, 0xFF, 0xFF))
+								}
+							})
+
+							ui.Box(c).Width(2)
+
+							// 2. Variable Key (Editable Text)
+							keyVal := v.Key
+							keyEl := ui.EditableText(c, &keyVal).
 								Font(theme.FontMono).
 								FontSize(theme.SizeBadge).
 								TextColor(theme.RimFocus).
-								Width(160)
+								Width(136)
 
-							// Type Badge
+							if keyEl.Changed() && keyVal != v.Key && keyVal != "" {
+								updated := v
+								updated.Key = keyVal
+								state.UpdateVariableInEnv(target.Name, v.Key, updated)
+							}
+
+							// 3. Initial Value (Editable Text)
+							initVal := v.InitialValue
+							initEl := ui.EditableText(c, &initVal).
+								Font(theme.FontMono).
+								FontSize(theme.SizeBadge).
+								TextColor(theme.TextSecondary).
+								Width(126)
+
+							if initEl.Changed() && initVal != v.InitialValue {
+								updated := v
+								updated.InitialValue = initVal
+								state.UpdateVariableInEnv(target.Name, v.Key, updated)
+							}
+
+							// 4. Current Value (Editable Text, Masked when hidden)
+							currentVal := v.CurrentValue
+							if isSecret {
+								if dec, ok := state.GetSecretPlaintext(target.Name, v.Key); ok && dec != "" {
+									currentVal = dec
+								}
+							}
+							if currentVal == "" {
+								currentVal = v.InitialValue
+							}
+
+							displayVal := currentVal
+							if isSecret && !isRevealed {
+								displayVal = env.MaskSecret(displayVal)
+							}
+
+							valEl := ui.EditableText(c, &displayVal).
+								Font(theme.FontMono).
+								FontSize(theme.SizeBadge).
+								TextColor(theme.TextPrimary).
+								Grow(1)
+							if isSecret && !isRevealed {
+								valEl.TextColor(theme.TextDim)
+							}
+
+							if valEl.Changed() && displayVal != "" {
+								updated := v
+								if isSecret {
+									updated.CurrentValue = displayVal
+									state.UpdateVariableInEnvWithSecret(target.Name, v.Key, updated, displayVal)
+								} else {
+									updated.CurrentValue = displayVal
+									state.UpdateVariableInEnv(target.Name, v.Key, updated)
+								}
+							}
+
+							// 5. Type Badge (TEXT / SECRET toggle)
 							typeBtn := ui.Row(c).
-								Width(70).
+								Width(58).
 								Height(20).
 								Radius(3).
 								Center().
@@ -463,6 +606,9 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 								updated := v
 								if isSecret {
 									updated.Type = models.VariableTypeText
+									if dec, ok := state.GetSecretPlaintext(target.Name, v.Key); ok && dec != "" {
+										updated.CurrentValue = dec
+									}
 								} else {
 									updated.Type = models.VariableTypeSecret
 								}
@@ -483,32 +629,11 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 									TextColor(textColor)
 							})
 
-							ui.Box(c).Width(4)
-
-							// Variable Value (Masked or Plaintext)
-							displayVal := v.CurrentValue
-							if displayVal == "" {
-								displayVal = v.InitialValue
-							}
-
-							if isSecret && !isRevealed {
-								displayVal = env.MaskSecret(displayVal)
-							}
-
-							valText := ui.Text(c, displayVal).
-								Font(theme.FontMono).
-								FontSize(theme.SizeBadge).
-								TextColor(theme.TextPrimary).
-								Grow(1)
-							if isSecret && !isRevealed {
-								valText.TextColor(theme.TextDim)
-							}
-
-							// Reveal / Mask Action Button for Secrets
+							// 6. Reveal / Mask Action Button for Secrets
 							if isSecret {
 								revealBtn := ui.Row(c).
+									Width(44).
 									Height(20).
-									PaddingX(6).
 									Radius(3).
 									Background(theme.SurfaceSubPlane).
 									Border(1, theme.BorderSubtle).
@@ -516,7 +641,7 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 									Focusable()
 
 								if revealBtn.Clicked() {
-									state.ToggleSecretReveal(v.Key)
+									state.ToggleSecretRevealForEnv(target.Name, v.Key)
 								}
 
 								revealBtn.Children(func() {
@@ -534,7 +659,21 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 								ui.Box(c).Width(44)
 							}
 
-							// Delete Variable Row Button
+							// 7. Scope indicator
+							ui.Row(c).
+								Width(34).
+								Height(18).
+								Radius(3).
+								Center().
+								Background(ui.RGBA(255, 255, 255, 0.05)).
+								Children(func() {
+									ui.Text(c, "Env").
+										Font(theme.FontMono).
+										FontSize(8).
+										TextColor(theme.TextDim)
+								})
+
+							// 8. Delete Variable Row Button
 							delRowBtn := ui.Row(c).
 								Width(20).
 								Height(20).

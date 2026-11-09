@@ -2,12 +2,15 @@ package app
 
 import (
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/engine/env"
 	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
+	"github.com/fblazt/boomerang/internal/models"
 	"github.com/fblazt/boomerang/internal/ui/catalog"
 	"github.com/fblazt/boomerang/internal/ui/theme"
 	"github.com/fblazt/boomerang/internal/ui/views"
@@ -46,6 +49,20 @@ func NewApp(opts Options) *App {
 	st := NewAppState(nil)
 	st.SetExecutor(enginehttp.NewClient(30 * time.Second))
 	st.SetInterpolator(env.InterpolateRequest, env.Interpolate)
+
+	// Initialize encrypted secret vault with disk persistence (or in-memory fallback)
+	var vault *env.SecretVault
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		vaultPath := filepath.Join(home, ".boomerang", "vault.enc")
+		vault, _ = env.NewSecretVault(vaultPath, "boomerang-vault-key")
+	}
+	if vault == nil {
+		vault, _ = env.NewInMemorySecretVault("boomerang-vault-key")
+	}
+
+	eng := env.NewEngine(vault, models.DefaultEnvironments())
+	st.SetEnvEngine(eng)
+
 	return &App{
 		opts:  opts,
 		state: st,

@@ -145,6 +145,84 @@ func TestEngine_VariableResolution(t *testing.T) {
 	}
 }
 
+func TestEngine_VariableRenamingAndTypeToggles(t *testing.T) {
+	vault, _ := NewInMemorySecretVault("pass")
+	engine := NewEngine(vault, nil)
+
+	// Add a secret variable
+	v := models.Variable{
+		Key:     "token",
+		Type:    models.VariableTypeSecret,
+		Enabled: true,
+	}
+	if err := engine.AddVariable("PROD", v, "secret_val_123"); err != nil {
+		t.Fatalf("AddVariable failed: %v", err)
+	}
+
+	// Rename key from "token" to "renamed_token"
+	v.Key = "renamed_token"
+	if err := engine.UpdateVariable("PROD", "token", v, ""); err != nil {
+		t.Fatalf("UpdateVariable rename failed: %v", err)
+	}
+
+	// Verify old key deleted from vault, new key populated in vault
+	if _, err := vault.GetSecret("PROD", "token"); err == nil {
+		t.Fatal("expected old key 'token' to be removed from vault")
+	}
+	sec, err := vault.GetSecret("PROD", "renamed_token")
+	if err != nil || sec != "secret_val_123" {
+		t.Fatalf("expected renamed secret in vault, got %q, err: %v", sec, err)
+	}
+
+	// Toggle from secret to text
+	v.Type = models.VariableTypeText
+	if err := engine.UpdateVariable("PROD", "renamed_token", v, ""); err != nil {
+		t.Fatalf("UpdateVariable type change to text failed: %v", err)
+	}
+	if _, err := vault.GetSecret("PROD", "renamed_token"); err == nil {
+		t.Fatal("expected secret removed from vault after changing to text")
+	}
+	res, _ := engine.GetResolvedVariables("PROD")
+	if res["renamed_token"] != "secret_val_123" {
+		t.Fatalf("expected plaintext variable value after toggle, got %q", res["renamed_token"])
+	}
+
+	// Toggle from text back to secret
+	v.Type = models.VariableTypeSecret
+	if err := engine.UpdateVariable("PROD", "renamed_token", v, "new_secret_456"); err != nil {
+		t.Fatalf("UpdateVariable type change to secret failed: %v", err)
+	}
+	sec2, err := vault.GetSecret("PROD", "renamed_token")
+	if err != nil || sec2 != "new_secret_456" {
+		t.Fatalf("expected new secret in vault, got %q, err: %v", sec2, err)
+	}
+}
+
+func TestEngine_EnvironmentRenamingVaultMigration(t *testing.T) {
+	vault, _ := NewInMemorySecretVault("pass")
+	engine := NewEngine(vault, nil)
+
+	env, err := engine.GetEnvironment("DEV")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Rename environment to DEVELOPMENT
+	env.Name = "DEVELOPMENT"
+	if err := engine.UpdateEnvironment(*env); err != nil {
+		t.Fatalf("UpdateEnvironment failed: %v", err)
+	}
+
+	// DEV api_key should be migrated to DEVELOPMENT
+	sec, err := vault.GetSecret("DEVELOPMENT", "api_key")
+	if err != nil || sec != "dev_key_local" {
+		t.Fatalf("expected secret migrated to DEVELOPMENT, got %q, err: %v", sec, err)
+	}
+	if _, err := vault.GetSecret("DEV", "api_key"); err == nil {
+		t.Fatal("expected old environment secrets removed from vault")
+	}
+}
+
 func TestEngine_ConcurrentAccess(t *testing.T) {
 	vault, _ := NewInMemorySecretVault("pass")
 	engine := NewEngine(vault, nil)

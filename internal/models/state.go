@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +13,25 @@ import (
 // RequestExecutor defines the interface for executing HTTP requests.
 type RequestExecutor interface {
 	Execute(ctx context.Context, req RequestModel) (*ResponseModel, error)
+}
+
+// EnvironmentManager defines the interface for workspace environment management and secret resolution.
+type EnvironmentManager interface {
+	GetEnvironments() []Environment
+	GetEnvironment(nameOrID string) (*Environment, error)
+	CreateEnvironment(env Environment) error
+	UpdateEnvironment(env Environment) error
+	DeleteEnvironment(nameOrID string) error
+	DuplicateEnvironment(nameOrID string, newName string) (*Environment, error)
+	SetActiveEnvironment(name string) error
+	GetActiveEnvironment() *Environment
+	AddVariable(envName string, v Variable, secretPlaintext string) error
+	UpdateVariable(envName string, oldKey string, v Variable, secretPlaintext string) error
+	DeleteVariable(envName string, key string) error
+	GetResolvedVariables(envName string) (map[string]string, error)
+	GetSecret(envName, key string) (string, error)
+	ExportEnvironment(envName string, maskSecrets bool) (string, error)
+	ImportEnvironment(name string, dotEnvContent string) (*Environment, error)
 }
 
 // AppState holds the thread-safe global reactive state of the Boomerang application.
@@ -30,6 +50,9 @@ type AppState struct {
 	ActiveResponse *ResponseModel
 	IsLoading      bool
 	ElapsedMs      int64
+
+	// Environment Engine / Vault Manager
+	envEngine EnvironmentManager
 
 	// Active Environment
 	ActiveEnv       string
@@ -102,6 +125,27 @@ func (s *AppState) SetInterpolator(
 	s.interpolateStrFn = strFn
 }
 
+// SetEnvEngine attaches an EnvironmentManager to AppState and syncs environments.
+func (s *AppState) SetEnvEngine(eng EnvironmentManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.envEngine = eng
+	if eng != nil {
+		s.Environments = eng.GetEnvironments()
+		if active := eng.GetActiveEnvironment(); active != nil {
+			s.ActiveEnv = active.Name
+			s.ActiveVaultEnv = active.Name
+		}
+	}
+}
+
+// EnvEngine returns the configured EnvironmentManager instance.
+func (s *AppState) EnvEngine() EnvironmentManager {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.envEngine
+}
+
 // GetActiveVariables returns a map of all enabled variables in the active environment.
 func (s *AppState) GetActiveVariables() map[string]string {
 	s.mu.RLock()
@@ -110,6 +154,11 @@ func (s *AppState) GetActiveVariables() map[string]string {
 }
 
 func (s *AppState) getActiveVariablesLocked() map[string]string {
+	if s.envEngine != nil {
+		if resolved, err := s.envEngine.GetResolvedVariables(s.ActiveEnv); err == nil {
+			return resolved
+		}
+	}
 	vars := make(map[string]string)
 	for _, env := range s.Environments {
 		if env.Name == s.ActiveEnv {
@@ -302,6 +351,9 @@ func (s *AppState) SetActiveEnv(env string) {
 	s.Mutate(func(state *AppState) {
 		state.ActiveEnv = env
 		state.ActiveVaultEnv = env
+		if state.envEngine != nil {
+			_ = state.envEngine.SetActiveEnvironment(env)
+		}
 	})
 }
 
@@ -330,8 +382,12 @@ func (s *AppState) CloseEnvDropdown() {
 func (s *AppState) SwitchEnvByIndex(idx int) {
 	s.Mutate(func(state *AppState) {
 		if idx >= 0 && idx < len(state.Environments) {
-			state.ActiveEnv = state.Environments[idx].Name
-			state.ActiveVaultEnv = state.Environments[idx].Name
+			name := state.Environments[idx].Name
+			state.ActiveEnv = name
+			state.ActiveVaultEnv = name
+			if state.envEngine != nil {
+				_ = state.envEngine.SetActiveEnvironment(name)
+			}
 		}
 	})
 }
@@ -381,7 +437,24 @@ func (s *AppState) ToggleSecretReveal(key string) {
 		if state.RevealedSecrets == nil {
 			state.RevealedSecrets = make(map[string]bool)
 		}
-		state.RevealedSecrets[key] = !state.RevealedSecrets[key]
+		composite := key
+		if !strings.Contains(key, ":") && state.ActiveVaultEnv != "" {
+			composite = state.ActiveVaultEnv + ":" + key
+		}
+		state.RevealedSecrets[composite] = !state.RevealedSecrets[composite]
+		state.RevealedSecrets[key] = state.RevealedSecrets[composite]
+	})
+}
+
+// ToggleSecretRevealForEnv toggles secret visibility scoped to a specific environment.
+func (s *AppState) ToggleSecretRevealForEnv(envName, key string) {
+	s.Mutate(func(state *AppState) {
+		if state.RevealedSecrets == nil {
+			state.RevealedSecrets = make(map[string]bool)
+		}
+		composite := envName + ":" + key
+		state.RevealedSecrets[composite] = !state.RevealedSecrets[composite]
+		state.RevealedSecrets[key] = state.RevealedSecrets[composite]
 	})
 }
 
@@ -392,14 +465,64 @@ func (s *AppState) IsSecretRevealed(key string) bool {
 	if s.RevealedSecrets == nil {
 		return false
 	}
+	if s.ActiveVaultEnv != "" {
+		if val, ok := s.RevealedSecrets[s.ActiveVaultEnv+":"+key]; ok {
+			return val
+		}
+	}
 	return s.RevealedSecrets[key]
+}
+
+// IsSecretRevealedForEnv checks if a secret variable is unmasked for the given environment.
+func (s *AppState) IsSecretRevealedForEnv(envName, key string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.RevealedSecrets == nil {
+		return false
+	}
+	composite := envName + ":" + key
+	if val, ok := s.RevealedSecrets[composite]; ok {
+		return val
+	}
+	return s.RevealedSecrets[key]
+}
+
+// GetSecretPlaintext retrieves the decrypted secret from the vault engine or active variables.
+func (s *AppState) GetSecretPlaintext(envName, key string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.envEngine != nil {
+		if val, err := s.envEngine.GetSecret(envName, key); err == nil && val != "" {
+			return val, true
+		}
+	}
+	for _, env := range s.Environments {
+		if strings.EqualFold(env.Name, envName) {
+			for _, v := range env.Variables {
+				if v.Key == key && v.CurrentValue != "" {
+					return v.CurrentValue, true
+				}
+			}
+		}
+	}
+	return "", false
 }
 
 // AddVariableToEnv adds a new variable to the given environment.
 func (s *AppState) AddVariableToEnv(envName string, v Variable) {
+	s.AddVariableToEnvWithSecret(envName, v, "")
+}
+
+// AddVariableToEnvWithSecret adds a new variable with optional plaintext secret for vault encryption.
+func (s *AppState) AddVariableToEnvWithSecret(envName string, v Variable, secretPlaintext string) {
 	s.Mutate(func(state *AppState) {
+		if state.envEngine != nil {
+			_ = state.envEngine.AddVariable(envName, v, secretPlaintext)
+			state.Environments = state.envEngine.GetEnvironments()
+			return
+		}
 		for i := range state.Environments {
-			if state.Environments[i].Name == envName {
+			if strings.EqualFold(state.Environments[i].Name, envName) {
 				state.Environments[i].Variables = append(state.Environments[i].Variables, v)
 				break
 			}
@@ -409,9 +532,19 @@ func (s *AppState) AddVariableToEnv(envName string, v Variable) {
 
 // UpdateVariableInEnv updates a variable in the given environment.
 func (s *AppState) UpdateVariableInEnv(envName string, key string, v Variable) {
+	s.UpdateVariableInEnvWithSecret(envName, key, v, "")
+}
+
+// UpdateVariableInEnvWithSecret updates a variable in the given environment with optional secret plaintext.
+func (s *AppState) UpdateVariableInEnvWithSecret(envName string, key string, v Variable, secretPlaintext string) {
 	s.Mutate(func(state *AppState) {
+		if state.envEngine != nil {
+			_ = state.envEngine.UpdateVariable(envName, key, v, secretPlaintext)
+			state.Environments = state.envEngine.GetEnvironments()
+			return
+		}
 		for i := range state.Environments {
-			if state.Environments[i].Name == envName {
+			if strings.EqualFold(state.Environments[i].Name, envName) {
 				for j := range state.Environments[i].Variables {
 					if state.Environments[i].Variables[j].Key == key {
 						state.Environments[i].Variables[j] = v
@@ -426,8 +559,13 @@ func (s *AppState) UpdateVariableInEnv(envName string, key string, v Variable) {
 // DeleteVariableFromEnv deletes a variable from the given environment.
 func (s *AppState) DeleteVariableFromEnv(envName string, key string) {
 	s.Mutate(func(state *AppState) {
+		if state.envEngine != nil {
+			_ = state.envEngine.DeleteVariable(envName, key)
+			state.Environments = state.envEngine.GetEnvironments()
+			return
+		}
 		for i := range state.Environments {
-			if state.Environments[i].Name == envName {
+			if strings.EqualFold(state.Environments[i].Name, envName) {
 				vars := state.Environments[i].Variables
 				for j := range vars {
 					if vars[j].Key == key {
@@ -458,7 +596,12 @@ func (s *AppState) CreateEnvironment(name, color string) {
 				StrictSSL: true,
 			},
 		}
-		state.Environments = append(state.Environments, newEnv)
+		if state.envEngine != nil {
+			_ = state.envEngine.CreateEnvironment(newEnv)
+			state.Environments = state.envEngine.GetEnvironments()
+		} else {
+			state.Environments = append(state.Environments, newEnv)
+		}
 		state.ActiveVaultEnv = name
 	})
 }
@@ -469,21 +612,26 @@ func (s *AppState) DeleteEnvironment(name string) {
 		if len(state.Environments) <= 1 {
 			return
 		}
-		index := -1
-		for i, env := range state.Environments {
-			if env.Name == name {
-				index = i
-				break
+		if state.envEngine != nil {
+			_ = state.envEngine.DeleteEnvironment(name)
+			state.Environments = state.envEngine.GetEnvironments()
+		} else {
+			index := -1
+			for i, env := range state.Environments {
+				if env.Name == name {
+					index = i
+					break
+				}
+			}
+			if index != -1 {
+				state.Environments = append(state.Environments[:index], state.Environments[index+1:]...)
 			}
 		}
-		if index != -1 {
-			state.Environments = append(state.Environments[:index], state.Environments[index+1:]...)
-			if state.ActiveEnv == name {
-				state.ActiveEnv = state.Environments[0].Name
-			}
-			if state.ActiveVaultEnv == name {
-				state.ActiveVaultEnv = state.Environments[0].Name
-			}
+		if state.ActiveEnv == name && len(state.Environments) > 0 {
+			state.ActiveEnv = state.Environments[0].Name
+		}
+		if state.ActiveVaultEnv == name && len(state.Environments) > 0 {
+			state.ActiveVaultEnv = state.Environments[0].Name
 		}
 	})
 }
@@ -491,6 +639,13 @@ func (s *AppState) DeleteEnvironment(name string) {
 // DuplicateEnvironment duplicates an environment by name.
 func (s *AppState) DuplicateEnvironment(name, newName string) {
 	s.Mutate(func(state *AppState) {
+		if state.envEngine != nil {
+			if _, err := state.envEngine.DuplicateEnvironment(name, newName); err == nil {
+				state.Environments = state.envEngine.GetEnvironments()
+				state.ActiveVaultEnv = newName
+				return
+			}
+		}
 		var src *Environment
 		for _, env := range state.Environments {
 			if env.Name == name {
@@ -519,10 +674,37 @@ func (s *AppState) UpdateTransportPolicy(envName string, p TransportPolicy) {
 		for i := range state.Environments {
 			if state.Environments[i].Name == envName {
 				state.Environments[i].TransportPolicy = p
+				if state.envEngine != nil {
+					_ = state.envEngine.UpdateEnvironment(state.Environments[i])
+				}
 				break
 			}
 		}
 	})
+}
+
+// ExportDotEnv exports an environment to .env format.
+func (s *AppState) ExportDotEnv(envName string, maskSecrets bool) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.envEngine != nil {
+		return s.envEngine.ExportEnvironment(envName, maskSecrets)
+	}
+	return "", fmt.Errorf("vault engine not configured")
+}
+
+// ImportDotEnv imports a .env format string into the named environment.
+func (s *AppState) ImportDotEnv(envName string, content string) error {
+	s.Mutate(func(state *AppState) {
+		if state.envEngine != nil {
+			env, err := state.envEngine.ImportEnvironment(envName, content)
+			if err == nil {
+				state.Environments = state.envEngine.GetEnvironments()
+				state.ActiveVaultEnv = env.Name
+			}
+		}
+	})
+	return nil
 }
 
 // ToggleAuthSecret flips visibility of masked passwords and tokens.

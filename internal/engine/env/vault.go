@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -19,27 +20,33 @@ import (
 )
 
 // MaskSecret masks a secret string for safe UI presentation (e.g. bk_live_••••••••0f12).
+// It ensures that sensitive characters are concealed and never leaks characters when prefix and suffix meet.
 func MaskSecret(secret string) string {
 	if secret == "" {
 		return ""
 	}
-	l := len(secret)
+	r := []rune(secret)
+	l := len(r)
 	if l <= 4 {
 		return "••••"
 	}
 
 	// Detect prefix with underscores like bk_live_, sk_live_, ghp_, etc.
-	if idx := strings.LastIndex(secret, "_"); idx != -1 && idx+1 <= l-4 {
-		prefix := secret[:idx+1]
-		suffix := secret[l-4:]
-		return prefix + "••••••••" + suffix
+	// Only preserve prefix and 4-character suffix if at least 4 characters remain masked between them!
+	if idx := strings.LastIndex(secret, "_"); idx != -1 {
+		prefixRunes := []rune(secret[:idx+1])
+		prefixLen := len(prefixRunes)
+		if prefixLen+4 <= l-4 {
+			suffix := string(r[l-4:])
+			return string(prefixRunes) + "••••••••" + suffix
+		}
 	}
 
 	if l <= 8 {
-		return secret[:1] + "••••••••" + secret[l-1:]
+		return string(r[:1]) + "••••••••" + string(r[l-1:])
 	}
 
-	return secret[:3] + "••••••••" + secret[l-3:]
+	return string(r[:3]) + "••••••••" + string(r[l-3:])
 }
 
 // SecretVault manages local encrypted secrets using AES-256-GCM.
@@ -315,9 +322,24 @@ func ImportDotEnv(envName string, content string) (*models.Environment, map[stri
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
 
-		// Strip quotes if present
-		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
-			val = val[1 : len(val)-1]
+		// Strip inline unquoted comments if present (e.g. KEY=value # comment)
+		if !strings.HasPrefix(val, "\"") && !strings.HasPrefix(val, "'") {
+			if commentIdx := strings.Index(val, " #"); commentIdx != -1 {
+				val = strings.TrimSpace(val[:commentIdx])
+			}
+		}
+
+		// Strip quotes and unescape if present
+		if len(val) >= 2 {
+			if val[0] == '"' && val[len(val)-1] == '"' {
+				if unq, err := strconv.Unquote(val); err == nil {
+					val = unq
+				} else {
+					val = val[1 : len(val)-1]
+				}
+			} else if val[0] == '\'' && val[len(val)-1] == '\'' {
+				val = val[1 : len(val)-1]
+			}
 		}
 
 		// Detect secret by name heuristic or prior comment

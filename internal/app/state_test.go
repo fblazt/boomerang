@@ -168,3 +168,73 @@ func TestAppState_SendRequest_WithInterpolation(t *testing.T) {
 		t.Fatalf("ActiveRequest.URL should remain templated, got %q", state.ActiveRequest.URL)
 	}
 }
+
+func TestAppState_SendRequest_WithVaultDecryptedSecrets(t *testing.T) {
+	state := app.NewAppState(nil)
+	state.SetInterpolator(env.InterpolateRequest, env.Interpolate)
+
+	// Create real AES-256-GCM vault and engine
+	vault, err := env.NewInMemorySecretVault("app-test-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := env.NewEngine(vault, models.DefaultEnvironments())
+	state.SetEnvEngine(engine)
+
+	// Add an encrypted secret to the vault via state
+	state.AddVariableToEnvWithSecret("DEV", models.Variable{
+		Key:     "vault_secret",
+		Type:    models.VariableTypeSecret,
+		Enabled: true,
+	}, "decrypted_secret_xyz")
+
+	state.SetActiveEnv("DEV")
+	state.ActiveRequest.URL = "{{base_url}}/auth"
+	state.ActiveRequest.Headers = []models.KeyValuePair{
+		{Key: "X-Secret", Value: "{{vault_secret}}", Enabled: true},
+	}
+
+	mockExec := &mockExecutor{done: make(chan struct{})}
+	state.SetExecutor(mockExec)
+
+	state.SendRequest()
+
+	select {
+	case <-mockExec.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("mock execution timed out")
+	}
+
+	if mockExec.lastReq.URL != "http://localhost:8080/v1/auth" {
+		t.Fatalf("expected DEV base_url, got %q", mockExec.lastReq.URL)
+	}
+	if len(mockExec.lastReq.Headers) != 1 || mockExec.lastReq.Headers[0].Value != "decrypted_secret_xyz" {
+		t.Fatalf("expected decrypted secret header 'decrypted_secret_xyz', got %v", mockExec.lastReq.Headers)
+	}
+}
+
+func TestAppState_ExportAndImportDotEnv(t *testing.T) {
+	state := app.NewAppState(nil)
+	vault, _ := env.NewInMemorySecretVault("export-test")
+	engine := env.NewEngine(vault, models.DefaultEnvironments())
+	state.SetEnvEngine(engine)
+
+	exported, err := state.ExportDotEnv("PROD", false)
+	if err != nil {
+		t.Fatalf("ExportDotEnv failed: %v", err)
+	}
+
+	err = state.ImportDotEnv("NEW_ENV", exported)
+	if err != nil {
+		t.Fatalf("ImportDotEnv failed: %v", err)
+	}
+
+	state.SetActiveEnv("NEW_ENV")
+	vars := state.GetActiveVariables()
+	if vars["base_url"] != "https://api.internal.net/v1" {
+		t.Errorf("expected base_url in imported env, got %q", vars["base_url"])
+	}
+	if vars["api_key"] != "bk_live_94aB882c0f12" {
+		t.Errorf("expected api_key decrypted in imported env, got %q", vars["api_key"])
+	}
+}
