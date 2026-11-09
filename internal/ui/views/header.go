@@ -28,6 +28,7 @@ func HeaderView(c *ui.Context, state *models.AppState) ui.Element {
 		BorderWidth(0, 0, 1, 0).
 		BorderColor(theme.BorderSubtle).
 		AlignItems(ui.Center).
+		ZIndex(100).
 		Children(func() {
 			// Window controls spacer (macOS traffic lights spacing)
 			ui.Box(c).Width(64)

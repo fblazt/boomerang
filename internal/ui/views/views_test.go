@@ -543,3 +543,47 @@ func TestRequestTabsView_BodyModes(t *testing.T) {
 		t.Fatal("expected File Path: label in binary mode")
 	}
 }
+
+func TestShellView_VaultModalIntegration(t *testing.T) {
+	state := models.NewAppState(nil)
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		ShellView(c, state)
+	}, 1440, 900)
+	tt.Frame()
+
+	// Initially modal is not visible
+	if tt.HasText("Brilliant Board 05 • Encrypted Secrets & Transport Policies") {
+		t.Fatal("modal should not be visible initially")
+	}
+
+	// Open dropdown
+	if err := tt.Click("▾"); err != nil {
+		t.Fatalf("failed to click chevron: %v", err)
+	}
+	tt.Frame()
+
+	// Click Manage Environments in dropdown
+	if err := tt.Click("Manage Environments & Secret Vault..."); err != nil {
+		t.Fatalf("failed to click Manage Environments: %v", err)
+	}
+	tt.Frame()
+
+	// Modal is open
+	if !state.ShowVaultModal {
+		t.Fatal("expected ShowVaultModal to be true")
+	}
+	if !tt.HasText("Workspace Environment & Secret Vault Manager") {
+		t.Fatal("expected modal title in ShellView")
+	}
+
+	// Close modal
+	if err := tt.Click("Close"); err != nil {
+		t.Fatalf("failed to click Close: %v", err)
+	}
+	tt.Frame()
+
+	if state.ShowVaultModal {
+		t.Fatal("expected ShowVaultModal to be false after Close")
+	}
+}

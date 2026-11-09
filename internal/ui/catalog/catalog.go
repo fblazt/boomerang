@@ -3,6 +3,7 @@ package catalog
 import (
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/models"
+	"github.com/fblazt/boomerang/internal/ui/modals"
 	"github.com/fblazt/boomerang/internal/ui/primitives"
 	"github.com/fblazt/boomerang/internal/ui/theme"
 	"github.com/fblazt/boomerang/internal/ui/views"
@@ -50,6 +51,9 @@ func ComponentCatalogView(c *ui.Context) ui.Element {
 
 					// 5. Key-Value Table & Telemetry Waterfall
 					renderKVAndTelemetrySection(c)
+
+					// 6. Workspace Environment & Secret Vault Manager
+					renderVaultSection(c)
 				})
 		})
 }
@@ -219,6 +223,23 @@ func renderKVAndTelemetrySection(c *ui.Context) {
 					Download: 19,
 					Total:    120,
 				})
+			})
+	})
+}
+
+func renderVaultSection(c *ui.Context) {
+	primitives.ElevatedPlane(c, func() {
+		ui.Column(c).
+			Gap(12).
+			Children(func() {
+				ui.Text(c, "6. Workspace Environment & Secret Vault Manager").
+					Font(theme.FontSans).
+					FontSize(theme.SizeHeading).
+					Bold().
+					TextColor(theme.TextPrimary)
+
+				previewState := models.NewAppState(nil)
+				modals.VaultManagerModal(c, previewState)
 			})
 	})
 }

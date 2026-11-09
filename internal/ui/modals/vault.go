@@ -1,0 +1,746 @@
+package modals
+
+import (
+	"fmt"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/fblazt/boomerang/internal/engine/env"
+	"github.com/fblazt/boomerang/internal/models"
+	"github.com/fblazt/boomerang/internal/ui/primitives"
+	"github.com/fblazt/boomerang/internal/ui/theme"
+)
+
+// VaultModalHost wraps the modal dialog in ui.Modal for standard popup dimming and escape dismissal.
+func VaultModalHost(c *ui.Context, state *models.AppState) ui.Element {
+	var showModal bool
+	state.View(func(s *models.AppState) {
+		showModal = s.ShowVaultModal
+	})
+
+	return ui.Modal(c, &showModal, func() {
+		VaultManagerModal(c, state)
+	})
+}
+
+// VaultManagerModal renders the full Environment & Secret Vault Manager dialog strictly matching Brilliant Board 05.
+func VaultManagerModal(c *ui.Context, state *models.AppState) ui.Element {
+	var (
+		currentActiveEnv string
+		selectedVaultEnv string
+		activeTab        string
+		envs             []models.Environment
+	)
+
+	state.View(func(s *models.AppState) {
+		currentActiveEnv = s.ActiveEnv
+		selectedVaultEnv = s.ActiveVaultEnv
+		activeTab = s.VaultModalTab
+		envs = s.Environments
+	})
+
+	if selectedVaultEnv == "" && len(envs) > 0 {
+		selectedVaultEnv = envs[0].Name
+	}
+
+	var currentEnvTarget *models.Environment
+	for i := range envs {
+		if envs[i].Name == selectedVaultEnv {
+			currentEnvTarget = &envs[i]
+			break
+		}
+	}
+	if currentEnvTarget == nil && len(envs) > 0 {
+		currentEnvTarget = &envs[0]
+		selectedVaultEnv = envs[0].Name
+	}
+
+	return ui.Column(c).
+		Width(920).
+		Height(580).
+		Radius(12).
+		LinearGradient(ui.LinearGradient{
+			From:  theme.SurfacePlaneTop,
+			To:    theme.SurfacePlaneBottom,
+			Angle: 180,
+		}).
+		Border(1, theme.BorderMedium).
+		Shadow(0, 16, 48, 0, ui.RGBA(0, 0, 0, 0.75)).
+		Children(func() {
+			// 1. Modal Titlebar Header
+			renderModalHeader(c, state)
+
+			// 2. Main Two-Pane Split Layout
+			ui.Row(c).
+				Grow(1).
+				AlignItems(ui.Stretch).
+				Children(func() {
+					// Left Pane: Environments List Sidebar
+					renderEnvironmentsSidebar(c, state, envs, selectedVaultEnv, currentActiveEnv)
+
+					// Right Pane: Active Environment Details & Variables Grid
+					if currentEnvTarget != nil {
+						renderEnvironmentDetailPane(c, state, *currentEnvTarget, currentActiveEnv, activeTab)
+					}
+				})
+		})
+}
+
+func renderModalHeader(c *ui.Context, state *models.AppState) {
+	ui.Row(c).
+		Height(54).
+		PaddingX(20).
+		Background(theme.SurfaceSubPlane).
+		BorderWidth(0, 0, 1, 0).
+		BorderColor(theme.BorderSubtle).
+		AlignItems(ui.Center).
+		Children(func() {
+			// Tactile Badge
+			primitives.KeycapBadge(c, "GET") // will display GET style badge for icon branding
+			ui.Box(c).Width(10)
+
+			ui.Column(c).
+				Gap(2).
+				Children(func() {
+					ui.Text(c, "Workspace Environment & Secret Vault Manager").
+						Font(theme.FontSans).
+						FontSize(theme.SizeHeading).
+						Bold().
+						TextColor(theme.TextPrimary)
+
+					ui.Text(c, "Brilliant Board 05 • Encrypted Secrets & Transport Policies").
+						Font(theme.FontSans).
+						FontSize(10).
+						TextColor(theme.TextMuted)
+				})
+
+			ui.Box(c).Grow(1)
+
+			// Close Button (Esc cap)
+			closeBtn := ui.Row(c).
+				Height(28).
+				PaddingX(8).
+				Radius(6).
+				Background(theme.SurfaceCardTop).
+				Border(1, theme.BorderSubtle).
+				AlignItems(ui.Center).
+				Gap(6).
+				Focusable()
+
+			if closeBtn.Clicked() {
+				state.CloseVaultModal()
+			}
+
+			closeBtn.Children(func() {
+				ui.Text(c, "Close").
+					Font(theme.FontSans).
+					FontSize(theme.SizeBadge).
+					TextColor(theme.TextSecondary)
+				primitives.ShortcutCap(c, "Esc")
+			})
+		})
+}
+
+func renderEnvironmentsSidebar(
+	c *ui.Context,
+	state *models.AppState,
+	envs []models.Environment,
+	selectedVaultEnv string,
+	currentActiveEnv string,
+) {
+	ui.Column(c).
+		Width(220).
+		Background(theme.SurfaceSubPlane).
+		BorderWidth(0, 1, 0, 0).
+		BorderColor(theme.BorderSubtle).
+		Padding(12).
+		Gap(6).
+		Children(func() {
+			ui.Row(c).
+				PaddingX(6).
+				PaddingY(4).
+				Children(func() {
+					ui.Text(c, "ENVIRONMENTS").
+						Font(theme.FontMono).
+						FontSize(9).
+						Bold().
+						TextColor(theme.TextDim)
+				})
+
+			// Environment Items
+			ui.Column(c).
+				Grow(1).
+				Gap(4).
+				Children(func() {
+					for _, envItem := range envs {
+						e := envItem
+						isSelected := e.Name == selectedVaultEnv
+						isCurrentWorkspace := e.Name == currentActiveEnv
+						dotColor := theme.EnvironmentColor(e.Name)
+
+						row := ui.Row(c).
+							Height(32).
+							PaddingX(8).
+							Radius(6).
+							AlignItems(ui.Center).
+							Gap(8).
+							Focusable()
+
+						if isSelected {
+							row.Background(theme.SurfaceActive).
+								Border(1, theme.BorderMedium)
+						}
+
+						if row.Clicked() {
+							state.SetActiveVaultEnv(e.Name)
+						}
+
+						row.Children(func() {
+							primitives.StatusDot(c, dotColor)
+
+							ui.Text(c, e.Name).
+								Font(theme.FontMono).
+								FontSize(theme.SizeBody).
+								Bold().
+								TextColor(theme.TextPrimary)
+
+							ui.Box(c).Grow(1)
+
+							if isCurrentWorkspace {
+								ui.Text(c, "ACTIVE").
+									Font(theme.FontMono).
+									FontSize(8).
+									Bold().
+									TextColor(dotColor)
+							} else {
+								ui.Text(c, fmt.Sprintf("%d", len(e.Variables))).
+									Font(theme.FontMono).
+									FontSize(10).
+									TextColor(theme.TextDim)
+							}
+						})
+					}
+				})
+
+			// New Environment Action Button
+			newEnvBtn := ui.Row(c).
+				Height(30).
+				PaddingX(8).
+				Radius(6).
+				Background(theme.SurfaceCardTop).
+				Border(1, theme.BorderSubtle).
+				AlignItems(ui.Center).
+				Center().
+				Gap(6).
+				Focusable()
+
+			if newEnvBtn.Clicked() {
+				nextNum := len(envs) + 1
+				newName := fmt.Sprintf("ENV-%d", nextNum)
+				state.CreateEnvironment(newName, "#38BDF8")
+			}
+
+			newEnvBtn.Children(func() {
+				ui.Text(c, "+ New Environment").
+					Font(theme.FontSans).
+					FontSize(theme.SizeBadge).
+					TextColor(theme.TextSecondary)
+			})
+		})
+}
+
+func renderEnvironmentDetailPane(
+	c *ui.Context,
+	state *models.AppState,
+	target models.Environment,
+	currentActiveEnv string,
+	activeTab string,
+) {
+	ui.Column(c).
+		Grow(1).
+		Padding(16).
+		Gap(12).
+		Children(func() {
+			// Environment Header & Action Bar
+			ui.Row(c).
+				AlignItems(ui.Center).
+				Gap(10).
+				Children(func() {
+					primitives.StatusDot(c, theme.EnvironmentColor(target.Name))
+
+					ui.Text(c, target.Name).
+						Font(theme.FontSans).
+						FontSize(theme.SizeHeading).
+						Bold().
+						TextColor(theme.TextPrimary)
+
+					ui.Box(c).Grow(1)
+
+					// Set as Active Button
+					if target.Name != currentActiveEnv {
+						setActiveBtn := ui.Row(c).
+							Height(26).
+							PaddingX(8).
+							Radius(5).
+							Background(theme.SurfaceCardTop).
+							Border(1, theme.BorderSubtle).
+							AlignItems(ui.Center).
+							Focusable()
+
+						if setActiveBtn.Clicked() {
+							state.SetActiveEnv(target.Name)
+						}
+
+						setActiveBtn.Children(func() {
+							ui.Text(c, "Set as Active").
+								Font(theme.FontSans).
+								FontSize(theme.SizeBadge).
+								TextColor(theme.RimFocus)
+						})
+					}
+
+					// Duplicate Button
+					dupBtn := ui.Row(c).
+						Height(26).
+						PaddingX(8).
+						Radius(5).
+						Background(theme.SurfaceCardTop).
+						Border(1, theme.BorderSubtle).
+						AlignItems(ui.Center).
+						Focusable()
+
+					if dupBtn.Clicked() {
+						state.DuplicateEnvironment(target.Name, target.Name+"-COPY")
+					}
+
+					dupBtn.Children(func() {
+						ui.Text(c, "Duplicate").
+							Font(theme.FontSans).
+							FontSize(theme.SizeBadge).
+							TextColor(theme.TextSecondary)
+					})
+
+					// Delete Button (disabled for PROD)
+					if target.Name != "PROD" {
+						delBtn := ui.Row(c).
+							Height(26).
+							PaddingX(8).
+							Radius(5).
+							Background(theme.SurfaceCardTop).
+							Border(1, theme.RimDangerGlow).
+							AlignItems(ui.Center).
+							Focusable()
+
+						if delBtn.Clicked() {
+							state.DeleteEnvironment(target.Name)
+						}
+
+						delBtn.Children(func() {
+							ui.Text(c, "Delete").
+								Font(theme.FontSans).
+								FontSize(theme.SizeBadge).
+								TextColor(theme.RimDanger)
+						})
+					}
+				})
+
+			// Sub-tabs: Variables vs Transport Policy
+			ui.Row(c).
+				Height(30).
+				BorderWidth(0, 0, 1, 0).
+				BorderColor(theme.BorderSubtle).
+				Gap(16).
+				Children(func() {
+					tabVar := ui.Row(c).
+						Height(30).
+						AlignItems(ui.Center).
+						Focusable()
+					if activeTab == "variables" || activeTab == "" {
+						tabVar.BorderWidth(0, 0, 2, 0).BorderColor(theme.RimFocus)
+					}
+					if tabVar.Clicked() {
+						state.SetVaultModalTab("variables")
+					}
+					tabVar.Children(func() {
+						ui.Text(c, fmt.Sprintf("Variables (%d)", len(target.Variables))).
+							Font(theme.FontSans).
+							FontSize(theme.SizeBody).
+							Bold().
+							TextColor(theme.TextPrimary)
+					})
+
+					tabTransport := ui.Row(c).
+						Height(30).
+						AlignItems(ui.Center).
+						Focusable()
+					if activeTab == "transport" {
+						tabTransport.BorderWidth(0, 0, 2, 0).BorderColor(theme.RimFocus)
+					}
+					if tabTransport.Clicked() {
+						state.SetVaultModalTab("transport")
+					}
+					tabTransport.Children(func() {
+						ui.Text(c, "Transport Policy").
+							Font(theme.FontSans).
+							FontSize(theme.SizeBody).
+							Bold().
+							TextColor(theme.TextSecondary)
+					})
+				})
+
+			// Tab Content Area
+			if activeTab == "transport" {
+				renderTransportPolicyTab(c, state, target)
+			} else {
+				renderVariablesGridTab(c, state, target)
+			}
+		})
+}
+
+func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models.Environment) {
+	ui.Column(c).
+		Grow(1).
+		Gap(8).
+		Children(func() {
+			// Table Header
+			ui.Row(c).
+				Height(26).
+				PaddingX(8).
+				Background(theme.SurfaceSubPlane).
+				Border(1, theme.BorderSubtle).
+				Radius(4).
+				AlignItems(ui.Center).
+				Children(func() {
+					ui.Text(c, "VARIABLE NAME").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(160)
+					ui.Text(c, "TYPE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(80)
+					ui.Text(c, "CURRENT VALUE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Grow(1)
+					ui.Text(c, "ACTIONS").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(80)
+				})
+
+			// Variable Rows
+			ui.Column(c).
+				Grow(1).
+				Gap(4).
+				Children(func() {
+					for _, variableItem := range target.Variables {
+						v := variableItem
+						isSecret := v.Type == models.VariableTypeSecret
+						isRevealed := state.IsSecretRevealed(v.Key)
+
+						row := ui.Row(c).
+							Height(32).
+							PaddingX(8).
+							Radius(4).
+							Background(theme.SurfaceCardTop).
+							Border(1, theme.BorderSubtle).
+							AlignItems(ui.Center).
+							Gap(6)
+
+						row.Children(func() {
+							// Variable Key
+							ui.Text(c, v.Key).
+								Font(theme.FontMono).
+								FontSize(theme.SizeBadge).
+								TextColor(theme.RimFocus).
+								Width(160)
+
+							// Type Badge
+							typeBtn := ui.Row(c).
+								Width(70).
+								Height(20).
+								Radius(3).
+								Center().
+								Focusable()
+
+							if isSecret {
+								typeBtn.Background(ui.RGBA(0xF5, 0x9E, 0x0B, 0.18)).
+									Border(1, ui.RGBA(0xF5, 0x9E, 0x0B, 0.40))
+							} else {
+								typeBtn.Background(ui.RGBA(0x38, 0xBD, 0xF8, 0.14)).
+									Border(1, ui.RGBA(0x38, 0xBD, 0xF8, 0.30))
+							}
+
+							if typeBtn.Clicked() {
+								updated := v
+								if isSecret {
+									updated.Type = models.VariableTypeText
+								} else {
+									updated.Type = models.VariableTypeSecret
+								}
+								state.UpdateVariableInEnv(target.Name, v.Key, updated)
+							}
+
+							typeBtn.Children(func() {
+								typeText := "TEXT"
+								textColor := theme.RimFocus
+								if isSecret {
+									typeText = "SECRET"
+									textColor = ui.RGB(0xF5, 0x9E, 0x0B)
+								}
+								ui.Text(c, typeText).
+									Font(theme.FontMono).
+									FontSize(8).
+									Bold().
+									TextColor(textColor)
+							})
+
+							ui.Box(c).Width(4)
+
+							// Variable Value (Masked or Plaintext)
+							displayVal := v.CurrentValue
+							if displayVal == "" {
+								displayVal = v.InitialValue
+							}
+
+							if isSecret && !isRevealed {
+								displayVal = env.MaskSecret(displayVal)
+							}
+
+							valText := ui.Text(c, displayVal).
+								Font(theme.FontMono).
+								FontSize(theme.SizeBadge).
+								TextColor(theme.TextPrimary).
+								Grow(1)
+							if isSecret && !isRevealed {
+								valText.TextColor(theme.TextDim)
+							}
+
+							// Reveal / Mask Action Button for Secrets
+							if isSecret {
+								revealBtn := ui.Row(c).
+									Height(20).
+									PaddingX(6).
+									Radius(3).
+									Background(theme.SurfaceSubPlane).
+									Border(1, theme.BorderSubtle).
+									Center().
+									Focusable()
+
+								if revealBtn.Clicked() {
+									state.ToggleSecretReveal(v.Key)
+								}
+
+								revealBtn.Children(func() {
+									btnLabel := "SHOW"
+									if isRevealed {
+										btnLabel = "HIDE"
+									}
+									ui.Text(c, btnLabel).
+										Font(theme.FontMono).
+										FontSize(8).
+										Bold().
+										TextColor(theme.TextMuted)
+								})
+							} else {
+								ui.Box(c).Width(44)
+							}
+
+							// Delete Variable Row Button
+							delRowBtn := ui.Row(c).
+								Width(20).
+								Height(20).
+								Radius(3).
+								Center().
+								Focusable()
+
+							if delRowBtn.Clicked() {
+								state.DeleteVariableFromEnv(target.Name, v.Key)
+							}
+
+							delRowBtn.Children(func() {
+								ui.Text(c, "✕").
+									Font(theme.FontSans).
+									FontSize(10).
+									TextColor(theme.TextDim)
+							})
+						})
+					}
+				})
+
+			// Add Variable Row Quick Form
+			ui.Row(c).
+				Height(32).
+				PaddingX(8).
+				Radius(4).
+				Background(theme.SurfaceSubPlane).
+				Border(1, theme.BorderSubtle).
+				AlignItems(ui.Center).
+				Gap(8).
+				Children(func() {
+					addBtn := ui.Row(c).
+						Height(24).
+						PaddingX(10).
+						Radius(4).
+						Background(theme.SurfaceCardTop).
+						Border(1, theme.BorderMedium).
+						AlignItems(ui.Center).
+						Focusable()
+
+					if addBtn.Clicked() {
+						nextKey := fmt.Sprintf("VAR_%d", len(target.Variables)+1)
+						state.AddVariableToEnv(target.Name, models.Variable{
+							Key:          nextKey,
+							InitialValue: "value",
+							CurrentValue: "value",
+							Type:         models.VariableTypeText,
+							Enabled:      true,
+						})
+					}
+
+					addBtn.Children(func() {
+						ui.Text(c, "+ Add Variable").
+							Font(theme.FontSans).
+							FontSize(theme.SizeBadge).
+							TextColor(theme.RimFocus)
+					})
+				})
+		})
+}
+
+func renderTransportPolicyTab(c *ui.Context, state *models.AppState, target models.Environment) {
+	policy := target.TransportPolicy
+	if policy.Protocol == "" {
+		policy.Protocol = "HTTP/2"
+	}
+
+	ui.Column(c).
+		Grow(1).
+		Gap(14).
+		Children(func() {
+			// Protocol Radio Selector
+			ui.Column(c).
+				Gap(6).
+				Children(func() {
+					ui.Text(c, "HTTP PROTOCOL & MULTIPLEXING").
+						Font(theme.FontMono).
+						FontSize(9).
+						Bold().
+						TextColor(theme.TextDim)
+
+					ui.Row(c).
+						Gap(8).
+						Children(func() {
+							protocols := []string{"HTTP/2", "HTTP/3", "HTTP/1.1"}
+							for _, proto := range protocols {
+								pr := proto
+								isSelected := policy.Protocol == pr
+								btn := ui.Row(c).
+									Height(28).
+									PaddingX(12).
+									Radius(5).
+									AlignItems(ui.Center).
+									Gap(6).
+									Focusable()
+
+								if isSelected {
+									btn.Background(theme.SurfaceActive).
+										Border(1, theme.RimFocus)
+								} else {
+									btn.Background(theme.SurfaceCardTop).
+										Border(1, theme.BorderSubtle)
+								}
+
+								if btn.Clicked() {
+									updated := policy
+									updated.Protocol = pr
+									state.UpdateTransportPolicy(target.Name, updated)
+								}
+
+								btn.Children(func() {
+									dotColor := theme.TextDim
+									if isSelected {
+										dotColor = theme.RimFocus
+									}
+									primitives.StatusDot(c, dotColor)
+
+									label := pr
+									if pr == "HTTP/2" {
+										label = "HTTP/2 Multiplexed"
+									} else if pr == "HTTP/3" {
+										label = "HTTP/3 (QUIC UDP 0-RTT)"
+									}
+									ui.Text(c, label).
+										Font(theme.FontSans).
+										FontSize(theme.SizeBadge).
+										TextColor(theme.TextPrimary)
+								})
+							}
+						})
+				})
+
+			// Security Toggles
+			ui.Column(c).
+				Gap(6).
+				Children(func() {
+					ui.Text(c, "SSL & CERTIFICATE VERIFICATION").
+						Font(theme.FontMono).
+						FontSize(9).
+						Bold().
+						TextColor(theme.TextDim)
+
+					sslToggle := ui.Row(c).
+						Height(28).
+						PaddingX(10).
+						Radius(5).
+						Background(theme.SurfaceCardTop).
+						Border(1, theme.BorderSubtle).
+						AlignItems(ui.Center).
+						Gap(8).
+						Focusable()
+
+					if sslToggle.Clicked() {
+						updated := policy
+						updated.StrictSSL = !updated.StrictSSL
+						state.UpdateTransportPolicy(target.Name, updated)
+					}
+
+					sslToggle.Children(func() {
+						status := "OFF (Insecure)"
+						statusColor := theme.TextDim
+						if policy.StrictSSL {
+							status = "ON (Strict Verification)"
+							statusColor = ui.RGB(0x34, 0xD3, 0x99)
+						}
+
+						ui.Text(c, "Strict SSL Verification:").
+							Font(theme.FontSans).
+							FontSize(theme.SizeBadge).
+							TextColor(theme.TextPrimary)
+
+						ui.Text(c, status).
+							Font(theme.FontMono).
+							FontSize(theme.SizeBadge).
+							Bold().
+							TextColor(statusColor)
+					})
+				})
+
+			// mTLS Client Identity
+			ui.Column(c).
+				Gap(6).
+				Children(func() {
+					ui.Text(c, "mTLS CLIENT IDENTITY (PEM / PKCS#12)").
+						Font(theme.FontMono).
+						FontSize(9).
+						Bold().
+						TextColor(theme.TextDim)
+
+					ui.Row(c).
+						Height(32).
+						PaddingX(10).
+						Radius(5).
+						Background(theme.SurfaceCardTop).
+						Border(1, theme.BorderSubtle).
+						AlignItems(ui.Center).
+						Children(func() {
+							certPath := policy.ClientCertPEM
+							if certPath == "" {
+								certPath = "No client certificate configured (click to select PEM/P12)"
+							}
+							ui.Text(c, certPath).
+								Font(theme.FontMono).
+								FontSize(theme.SizeBadge).
+								TextColor(theme.TextMuted)
+						})
+				})
+		})
+}

@@ -51,4 +51,12 @@ func TestComponentCatalogView(t *testing.T) {
 	if !tt.HasText("{{base_url}}") || !tt.HasText("⌘↵") || !tt.HasText("⌘K") {
 		t.Fatal("expected variable chip and shortcut caps")
 	}
+
+	// Assert vault manager section
+	if !tt.HasText("6. Workspace Environment & Secret Vault Manager") {
+		t.Fatal("expected vault manager section header")
+	}
+	if !tt.HasText("Brilliant Board 05 • Encrypted Secrets & Transport Policies") {
+		t.Fatal("expected vault manager subtitle")
+	}
 }

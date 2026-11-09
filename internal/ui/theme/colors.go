@@ -47,6 +47,22 @@ var (
 	TelemetryDL   = ui.RGB(0x3B, 0x82, 0xF6) // Blue (Download)
 )
 
+// EnvironmentColor returns the standard theme color for an environment name.
+func EnvironmentColor(envName string) ui.Color {
+	switch envName {
+	case "PROD":
+		return ui.RGB(0x34, 0xD3, 0x99) // Emerald
+	case "STG":
+		return ui.RGB(0xFB, 0xBF, 0x24) // Amber
+	case "DEV":
+		return ui.RGB(0x38, 0xBD, 0xF8) // Cyan
+	case "LOCAL":
+		return ui.RGB(0xA8, 0x55, 0xF7) // Purple
+	default:
+		return RimFocus
+	}
+}
+
 // HTTP Verb & Protocol Keycap Styles
 type VerbStyle struct {
 	TextColor   ui.Color

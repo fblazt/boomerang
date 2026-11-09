@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +37,8 @@ type AppState struct {
 	EnvDropdownOpen bool
 	ShowVaultModal  bool
 	ActiveVaultEnv  string
+	VaultModalTab   string          // "variables", "transport"
+	RevealedSecrets map[string]bool // key -> isRevealed
 
 	// Template Interpolator hooks
 	interpolateFn    func(req RequestModel, vars map[string]string) RequestModel
@@ -64,9 +67,11 @@ func NewAppState(redrawFn func()) *AppState {
 			BodyType: "json",
 			AuthType: "none",
 		},
-		ActiveEnv:      "PROD",
-		ActiveVaultEnv: "PROD",
-		Environments:   DefaultEnvironments(),
+		ActiveEnv:       "PROD",
+		ActiveVaultEnv:  "PROD",
+		VaultModalTab:   "variables",
+		RevealedSecrets: make(map[string]bool),
+		Environments:    DefaultEnvironments(),
 		ActiveTab:    "params",
 		SidebarOpen:  true,
 	}
@@ -360,6 +365,163 @@ func (s *AppState) CloseVaultModal() {
 func (s *AppState) SetActiveVaultEnv(env string) {
 	s.Mutate(func(state *AppState) {
 		state.ActiveVaultEnv = env
+	})
+}
+
+// SetVaultModalTab updates active tab in the vault modal ("variables" or "transport").
+func (s *AppState) SetVaultModalTab(tab string) {
+	s.Mutate(func(state *AppState) {
+		state.VaultModalTab = tab
+	})
+}
+
+// ToggleSecretReveal toggles visibility of a specific secret variable.
+func (s *AppState) ToggleSecretReveal(key string) {
+	s.Mutate(func(state *AppState) {
+		if state.RevealedSecrets == nil {
+			state.RevealedSecrets = make(map[string]bool)
+		}
+		state.RevealedSecrets[key] = !state.RevealedSecrets[key]
+	})
+}
+
+// IsSecretRevealed checks if a secret variable is unmasked.
+func (s *AppState) IsSecretRevealed(key string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.RevealedSecrets == nil {
+		return false
+	}
+	return s.RevealedSecrets[key]
+}
+
+// AddVariableToEnv adds a new variable to the given environment.
+func (s *AppState) AddVariableToEnv(envName string, v Variable) {
+	s.Mutate(func(state *AppState) {
+		for i := range state.Environments {
+			if state.Environments[i].Name == envName {
+				state.Environments[i].Variables = append(state.Environments[i].Variables, v)
+				break
+			}
+		}
+	})
+}
+
+// UpdateVariableInEnv updates a variable in the given environment.
+func (s *AppState) UpdateVariableInEnv(envName string, key string, v Variable) {
+	s.Mutate(func(state *AppState) {
+		for i := range state.Environments {
+			if state.Environments[i].Name == envName {
+				for j := range state.Environments[i].Variables {
+					if state.Environments[i].Variables[j].Key == key {
+						state.Environments[i].Variables[j] = v
+						return
+					}
+				}
+			}
+		}
+	})
+}
+
+// DeleteVariableFromEnv deletes a variable from the given environment.
+func (s *AppState) DeleteVariableFromEnv(envName string, key string) {
+	s.Mutate(func(state *AppState) {
+		for i := range state.Environments {
+			if state.Environments[i].Name == envName {
+				vars := state.Environments[i].Variables
+				for j := range vars {
+					if vars[j].Key == key {
+						state.Environments[i].Variables = append(vars[:j], vars[j+1:]...)
+						return
+					}
+				}
+			}
+		}
+	})
+}
+
+// CreateEnvironment adds a new workspace environment.
+func (s *AppState) CreateEnvironment(name, color string) {
+	s.Mutate(func(state *AppState) {
+		if color == "" {
+			color = "#38BDF8"
+		}
+		newEnv := Environment{
+			ID:    "env_" + strings.ToLower(name),
+			Name:  name,
+			Color: color,
+			Variables: []Variable{
+				{Key: "base_url", InitialValue: "http://localhost:8080", CurrentValue: "http://localhost:8080", Type: VariableTypeText, Enabled: true},
+			},
+			TransportPolicy: TransportPolicy{
+				Protocol:  "HTTP/2",
+				StrictSSL: true,
+			},
+		}
+		state.Environments = append(state.Environments, newEnv)
+		state.ActiveVaultEnv = name
+	})
+}
+
+// DeleteEnvironment removes an environment by name.
+func (s *AppState) DeleteEnvironment(name string) {
+	s.Mutate(func(state *AppState) {
+		if len(state.Environments) <= 1 {
+			return
+		}
+		index := -1
+		for i, env := range state.Environments {
+			if env.Name == name {
+				index = i
+				break
+			}
+		}
+		if index != -1 {
+			state.Environments = append(state.Environments[:index], state.Environments[index+1:]...)
+			if state.ActiveEnv == name {
+				state.ActiveEnv = state.Environments[0].Name
+			}
+			if state.ActiveVaultEnv == name {
+				state.ActiveVaultEnv = state.Environments[0].Name
+			}
+		}
+	})
+}
+
+// DuplicateEnvironment duplicates an environment by name.
+func (s *AppState) DuplicateEnvironment(name, newName string) {
+	s.Mutate(func(state *AppState) {
+		var src *Environment
+		for _, env := range state.Environments {
+			if env.Name == name {
+				cpy := env
+				src = &cpy
+				break
+			}
+		}
+		if src != nil {
+			dup := *src
+			dup.ID = "env_" + strings.ToLower(newName)
+			dup.Name = newName
+			dup.IsDefault = false
+			dupVars := make([]Variable, len(src.Variables))
+			copy(dupVars, src.Variables)
+			dup.Variables = dupVars
+			state.Environments = append(state.Environments, dup)
+			state.ActiveVaultEnv = newName
+		}
+	})
+}
+
+// UpdateTransportPolicy updates the transport policy settings for an environment.
+func (s *AppState) UpdateTransportPolicy(envName string, p TransportPolicy) {
+	s.Mutate(func(state *AppState) {
+		for i := range state.Environments {
+			if state.Environments[i].Name == envName {
+				state.Environments[i].TransportPolicy = p
+				break
+			}
+		}
 	})
 }
 

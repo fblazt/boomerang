@@ -3,6 +3,7 @@ package views
 import (
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/models"
+	"github.com/fblazt/boomerang/internal/ui/modals"
 	"github.com/fblazt/boomerang/internal/ui/theme"
 )
 
@@ -49,5 +50,8 @@ func ShellView(c *ui.Context, state *models.AppState) ui.Element {
 
 			// Bottom Status Bar (Sockets / Metrics)
 			StatusBarView(c, state)
+
+			// Environment & Secret Vault Manager Modal Overlay
+			modals.VaultModalHost(c, state)
 		})
 }

@@ -11,18 +11,7 @@ import (
 
 // EnvironmentColor returns the standard theme status color for an environment name.
 func EnvironmentColor(envName string) ui.Color {
-	switch envName {
-	case "PROD":
-		return ui.RGB(0x34, 0xD3, 0x99) // Emerald
-	case "STG":
-		return ui.RGB(0xFB, 0xBF, 0x24) // Amber
-	case "DEV":
-		return ui.RGB(0x38, 0xBD, 0xF8) // Cyan
-	case "LOCAL":
-		return ui.RGB(0xA8, 0x55, 0xF7) // Purple
-	default:
-		return theme.RimFocus
-	}
+	return theme.EnvironmentColor(envName)
 }
 
 // EnvironmentDropdownMenu renders the elevated floating dropdown menu for switching environments.
@@ -47,6 +36,7 @@ func EnvironmentDropdownMenu(c *ui.Context, state *models.AppState) ui.Element {
 		Border(1, theme.BorderMedium).
 		Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.65)).
 		Gap(6).
+		ZIndex(1000).
 		Children(func() {
 			// Header Label
 			ui.Row(c).
