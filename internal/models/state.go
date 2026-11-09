@@ -31,8 +31,11 @@ type AppState struct {
 	ElapsedMs      int64
 
 	// Active Environment
-	ActiveEnv    string
-	Environments []Environment
+	ActiveEnv       string
+	Environments    []Environment
+	EnvDropdownOpen bool
+	ShowVaultModal  bool
+	ActiveVaultEnv  string
 
 	// Template Interpolator hooks
 	interpolateFn    func(req RequestModel, vars map[string]string) RequestModel
@@ -61,8 +64,9 @@ func NewAppState(redrawFn func()) *AppState {
 			BodyType: "json",
 			AuthType: "none",
 		},
-		ActiveEnv:    "PROD",
-		Environments: DefaultEnvironments(),
+		ActiveEnv:      "PROD",
+		ActiveVaultEnv: "PROD",
+		Environments:   DefaultEnvironments(),
 		ActiveTab:    "params",
 		SidebarOpen:  true,
 	}
@@ -292,6 +296,70 @@ func (s *AppState) SetResponse(resp *ResponseModel) {
 func (s *AppState) SetActiveEnv(env string) {
 	s.Mutate(func(state *AppState) {
 		state.ActiveEnv = env
+		state.ActiveVaultEnv = env
+	})
+}
+
+// ToggleEnvDropdown toggles visibility of the environment switcher dropdown.
+func (s *AppState) ToggleEnvDropdown() {
+	s.Mutate(func(state *AppState) {
+		state.EnvDropdownOpen = !state.EnvDropdownOpen
+	})
+}
+
+// OpenEnvDropdown opens the environment switcher dropdown.
+func (s *AppState) OpenEnvDropdown() {
+	s.Mutate(func(state *AppState) {
+		state.EnvDropdownOpen = true
+	})
+}
+
+// CloseEnvDropdown closes the environment switcher dropdown.
+func (s *AppState) CloseEnvDropdown() {
+	s.Mutate(func(state *AppState) {
+		state.EnvDropdownOpen = false
+	})
+}
+
+// SwitchEnvByIndex switches the active environment to the environment at the given index.
+func (s *AppState) SwitchEnvByIndex(idx int) {
+	s.Mutate(func(state *AppState) {
+		if idx >= 0 && idx < len(state.Environments) {
+			state.ActiveEnv = state.Environments[idx].Name
+			state.ActiveVaultEnv = state.Environments[idx].Name
+		}
+	})
+}
+
+// ToggleVaultModal toggles the Environment & Secret Vault Manager modal.
+func (s *AppState) ToggleVaultModal() {
+	s.Mutate(func(state *AppState) {
+		state.ShowVaultModal = !state.ShowVaultModal
+		if state.ShowVaultModal {
+			state.EnvDropdownOpen = false
+		}
+	})
+}
+
+// OpenVaultModal opens the Environment & Secret Vault Manager modal.
+func (s *AppState) OpenVaultModal() {
+	s.Mutate(func(state *AppState) {
+		state.ShowVaultModal = true
+		state.EnvDropdownOpen = false
+	})
+}
+
+// CloseVaultModal closes the Environment & Secret Vault Manager modal.
+func (s *AppState) CloseVaultModal() {
+	s.Mutate(func(state *AppState) {
+		state.ShowVaultModal = false
+	})
+}
+
+// SetActiveVaultEnv sets which environment is being edited inside the vault modal.
+func (s *AppState) SetActiveVaultEnv(env string) {
+	s.Mutate(func(state *AppState) {
+		state.ActiveVaultEnv = env
 	})
 }
 

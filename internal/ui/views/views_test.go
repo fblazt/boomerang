@@ -88,6 +88,95 @@ func TestHeaderView_EnvToggle(t *testing.T) {
 	}
 }
 
+func TestHeaderView_DropdownToggle(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ActiveEnv = "PROD"
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		HeaderView(c, state)
+	}, 1200, 300)
+	tt.Frame()
+
+	// Initially dropdown is not open
+	if tt.HasText("WORKSPACE ENVIRONMENTS") {
+		t.Fatal("dropdown should not be open initially")
+	}
+
+	// Click chevron to open dropdown
+	if err := tt.Click("▾"); err != nil {
+		t.Fatalf("failed to click chevron: %v", err)
+	}
+	tt.Frame()
+
+	if !state.EnvDropdownOpen {
+		t.Fatal("expected EnvDropdownOpen to be true")
+	}
+	if !tt.HasText("WORKSPACE ENVIRONMENTS") {
+		t.Fatal("expected WORKSPACE ENVIRONMENTS header in dropdown")
+	}
+	if !tt.HasText("Manage Environments & Secret Vault...") {
+		t.Fatal("expected Manage Environments & Secret Vault... action")
+	}
+
+	// Click DEV inside dropdown to switch
+	if err := tt.Click("DEV"); err != nil {
+		t.Fatalf("failed to click DEV in dropdown: %v", err)
+	}
+	tt.Frame()
+
+	if state.ActiveEnv != "DEV" {
+		t.Fatalf("expected ActiveEnv to change to DEV, got %s", state.ActiveEnv)
+	}
+	if state.EnvDropdownOpen {
+		t.Fatal("expected dropdown to close after selection")
+	}
+}
+
+func TestHeaderView_DropdownManageVault(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.EnvDropdownOpen = true
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		HeaderView(c, state)
+	}, 1200, 300)
+	tt.Frame()
+
+	if err := tt.Click("Manage Environments & Secret Vault..."); err != nil {
+		t.Fatalf("failed to click Manage Environments: %v", err)
+	}
+	tt.Frame()
+
+	if !state.ShowVaultModal {
+		t.Fatal("expected ShowVaultModal to be true")
+	}
+	if state.EnvDropdownOpen {
+		t.Fatal("expected dropdown to be closed when modal opens")
+	}
+}
+
+func TestUrlBarView_EnvChip(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ActiveEnv = "STG"
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		UrlBarView(c, state)
+	}, 1200, 100)
+	tt.Frame()
+
+	if !tt.HasText("STG") {
+		t.Fatal("expected STG in URL bar chip")
+	}
+
+	if err := tt.Click("STG"); err != nil {
+		t.Fatalf("failed to click STG chip: %v", err)
+	}
+	tt.Frame()
+
+	if !state.EnvDropdownOpen {
+		t.Fatal("expected EnvDropdownOpen to be true after clicking URL bar chip")
+	}
+}
+
 func TestSidebarView_ItemSelection(t *testing.T) {
 	state := models.NewAppState(nil)
 

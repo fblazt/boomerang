@@ -10,6 +10,17 @@ import (
 // HeaderView renders the top application titlebar with drag offset, workspace breadcrumb,
 // environment switcher, and quick action shortcuts.
 func HeaderView(c *ui.Context, state *models.AppState) ui.Element {
+	// Global window keyboard shortcuts for environment switching and vault
+	c.OnWindowShortcut(ui.Cmd, ui.Key1, func() { state.SwitchEnvByIndex(0) })
+	c.OnWindowShortcut(ui.Cmd, ui.Key2, func() { state.SwitchEnvByIndex(1) })
+	c.OnWindowShortcut(ui.Cmd, ui.Key3, func() { state.SwitchEnvByIndex(2) })
+	c.OnWindowShortcut(ui.Cmd, ui.Key4, func() { state.SwitchEnvByIndex(3) })
+	c.OnWindowShortcut(ui.Cmd, ui.KeyE, func() { state.OpenVaultModal() })
+	c.OnWindowShortcut(0, ui.KeyEscape, func() {
+		state.CloseEnvDropdown()
+		state.CloseVaultModal()
+	})
+
 	return ui.Row(c).
 		Height(44).
 		PaddingX(16).
@@ -69,63 +80,102 @@ func HeaderView(c *ui.Context, state *models.AppState) ui.Element {
 							primitives.ShortcutCap(c, "⌘K")
 						})
 
-					// Active Environment Indicator / Switcher Pill
+					// Active Environment Indicator / Switcher Pill with Dropdown
 					var currentEnv string
+					var isDropdownOpen bool
 					state.View(func(s *models.AppState) {
 						currentEnv = s.ActiveEnv
+						isDropdownOpen = s.EnvDropdownOpen
 					})
 
-					envBox := ui.Row(c).
-						Height(24).
-						PaddingX(8).
-						Radius(5).
-						LinearGradient(ui.LinearGradient{
-							From:  theme.SurfaceCardTop,
-							To:    theme.SurfaceCardBottom,
-							Angle: 180,
-						}).
-						Border(1, theme.BorderSubtle).
-						Shadow(0, 1, 0, 0, ui.RGB(0x06, 0x07, 0x0A)).
-						AlignItems(ui.Center).
-						Gap(6).
-						Focusable()
+					ui.Column(c).
+						Children(func() {
+							ui.Row(c).
+								AlignItems(ui.Center).
+								Gap(2).
+								Children(func() {
+									// Env pill
+									envBox := ui.Row(c).
+										Height(24).
+										PaddingX(8).
+										Radius(5).
+										LinearGradient(ui.LinearGradient{
+											From:  theme.SurfaceCardTop,
+											To:    theme.SurfaceCardBottom,
+											Angle: 180,
+										}).
+										Border(1, theme.BorderSubtle).
+										Shadow(0, 1, 0, 0, ui.RGB(0x06, 0x07, 0x0A)).
+										AlignItems(ui.Center).
+										Gap(6).
+										Focusable()
 
-					if envBox.Clicked() {
-						// Cycle environment on click: PROD -> STG -> DEV -> LOCAL -> PROD
-						nextEnv := "PROD"
-						switch currentEnv {
-						case "PROD":
-							nextEnv = "STG"
-						case "STG":
-							nextEnv = "DEV"
-						case "DEV":
-							nextEnv = "LOCAL"
-						default:
-							nextEnv = "PROD"
-						}
-						state.Mutate(func(st *models.AppState) {
-							st.ActiveEnv = nextEnv
+									if envBox.Clicked() {
+										// Cycle environment on click: PROD -> STG -> DEV -> LOCAL -> PROD
+										nextEnv := "PROD"
+										switch currentEnv {
+										case "PROD":
+											nextEnv = "STG"
+										case "STG":
+											nextEnv = "DEV"
+										case "DEV":
+											nextEnv = "LOCAL"
+										default:
+											nextEnv = "PROD"
+										}
+										state.SetActiveEnv(nextEnv)
+									}
+
+									envBox.Children(func() {
+										dotColor := EnvironmentColor(currentEnv)
+										primitives.StatusDot(c, dotColor)
+
+										ui.Text(c, currentEnv).
+											Font(theme.FontMono).
+											FontSize(theme.SizeBadge).
+											Bold().
+											TextColor(theme.TextPrimary)
+
+										capText := "⌘1"
+										switch currentEnv {
+										case "STG":
+											capText = "⌘2"
+										case "DEV":
+											capText = "⌘3"
+										case "LOCAL":
+											capText = "⌘4"
+										}
+										primitives.ShortcutCap(c, capText)
+									})
+
+									// Chevron dropdown toggle button
+									chevronBtn := ui.Row(c).
+										Height(24).
+										Width(18).
+										Center().
+										Radius(4).
+										Background(theme.SurfaceCardTop).
+										Border(1, theme.BorderSubtle).
+										Focusable()
+
+									if chevronBtn.Clicked() {
+										state.ToggleEnvDropdown()
+									}
+
+									chevronBtn.Children(func() {
+										ui.Text(c, "▾").
+											Font(theme.FontSans).
+											FontSize(10).
+											TextColor(theme.TextMuted)
+									})
+								})
+
+							// Dropdown menu if open
+							if isDropdownOpen {
+								ui.Box(c).Height(4)
+								EnvironmentDropdownMenu(c, state)
+							}
 						})
-					}
-
-					envBox.Children(func() {
-						// Status indicator dot
-						dotColor := ui.RGB(0x34, 0xD3, 0x99) // Emerald for PROD
-						if currentEnv == "STG" {
-							dotColor = ui.RGB(0xFB, 0xBF, 0x24) // Amber
-						} else if currentEnv == "DEV" || currentEnv == "LOCAL" {
-							dotColor = ui.RGB(0x38, 0xBD, 0xF8) // Cyan
-						}
-						primitives.StatusDot(c, dotColor)
-
-						ui.Text(c, currentEnv).
-							Font(theme.FontMono).
-							FontSize(theme.SizeBadge).
-							Bold().
-							TextColor(theme.TextPrimary)
-
-						primitives.ShortcutCap(c, "⌘1")
-					})
 				})
 		})
 }

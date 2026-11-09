@@ -76,16 +76,22 @@ func UrlBarView(c *ui.Context, state *models.AppState) ui.Element {
 				}
 
 				// Environment indicator chip on the right inside input bar (Brilliant Frame 308)
-				ui.Row(c).
+				envChip := ui.Row(c).
 					AlignItems(ui.Center).
 					Gap(5).
-					Children(func() {
-						ui.Box(c).Size(6, 6).Radius(3).Background(theme.RimFocus)
-						ui.Text(c, activeEnv).
-							Font(theme.FontMono).
-							FontSize(theme.SizeBadge).
-							TextColor(theme.TextMuted)
-					})
+					Focusable()
+
+				if envChip.Clicked() {
+					state.ToggleEnvDropdown()
+				}
+
+				envChip.Children(func() {
+					ui.Box(c).Size(6, 6).Radius(3).Background(EnvironmentColor(activeEnv))
+					ui.Text(c, activeEnv).
+						Font(theme.FontMono).
+						FontSize(theme.SizeBadge).
+						TextColor(theme.TextSecondary)
+				})
 			}).Grow(1)
 
 			// Action Buttons: Send/Cancel + Save with integrated shortcut caps
