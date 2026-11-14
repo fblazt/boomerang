@@ -2,7 +2,6 @@ package app
 
 import (
 	"log"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/engine/env"
 	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
+	"github.com/fblazt/boomerang/internal/engine/storage"
 	"github.com/fblazt/boomerang/internal/models"
 	"github.com/fblazt/boomerang/internal/ui/catalog"
 	"github.com/fblazt/boomerang/internal/ui/theme"
@@ -24,6 +24,7 @@ type Options struct {
 	MinWidth  int
 	MinHeight int
 	Preview   string
+	DataDir   string // Optional workspace persistence directory; defaults to ~/.boomerang
 }
 
 // DefaultOptions returns standard 1440x900 native desktop options.
@@ -42,6 +43,7 @@ type App struct {
 	opts  Options
 	state *AppState
 	win   *mygo.Window
+	db    *storage.SQLiteStore
 }
 
 // NewApp creates a new application instance.
@@ -50,14 +52,33 @@ func NewApp(opts Options) *App {
 	st.SetExecutor(enginehttp.NewClient(30 * time.Second))
 	st.SetInterpolator(env.InterpolateRequest, env.Interpolate)
 
+	dataDir := opts.DataDir
+	if dataDir == "" {
+		if dir, err := storage.DefaultDataDir(); err == nil {
+			dataDir = dir
+		}
+	}
+
 	// Initialize encrypted secret vault with disk persistence (or in-memory fallback)
 	var vault *env.SecretVault
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		vaultPath := filepath.Join(home, ".boomerang", "vault.enc")
+	if dataDir != "" {
+		vaultPath := filepath.Join(dataDir, "vault.enc")
 		vault, _ = env.NewSecretVault(vaultPath, "boomerang-vault-key")
 	}
 	if vault == nil {
 		vault, _ = env.NewInMemorySecretVault("boomerang-vault-key")
+	}
+
+	// Initialize SQLite history & scratchpad database (or in-memory fallback)
+	var dbStore *storage.SQLiteStore
+	if dataDir != "" {
+		dbStore, _ = storage.OpenSQLite(filepath.Join(dataDir, "boomerang.db"))
+	}
+	if dbStore == nil {
+		dbStore, _ = storage.OpenSQLite(":memory:")
+	}
+	if dbStore != nil {
+		st.SetHistoryStore(dbStore)
 	}
 
 	eng := env.NewEngine(vault, models.DefaultEnvironments())
@@ -66,6 +87,7 @@ func NewApp(opts Options) *App {
 	app := &App{
 		opts:  opts,
 		state: st,
+		db:    dbStore,
 	}
 
 	st.SetFilePicker(func(title string, extensions []string, onPicked func(path string)) {
@@ -95,6 +117,14 @@ func NewApp(opts Options) *App {
 // State returns the application's thread-safe state.
 func (a *App) State() *AppState {
 	return a.state
+}
+
+// Close releases persisted application resources such as the SQLite store.
+func (a *App) Close() error {
+	if a.db != nil {
+		return a.db.Close()
+	}
+	return nil
 }
 
 // Window returns the native OS window instance.

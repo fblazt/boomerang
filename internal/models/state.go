@@ -37,6 +37,14 @@ type EnvironmentManager interface {
 // FilePickerFunc opens a file selector and invokes onPicked with the selected path if confirmed.
 type FilePickerFunc func(title string, extensions []string, onPicked func(path string))
 
+// HistoryStore defines persistence operations for executed request history logs.
+type HistoryStore interface {
+	RecordHistory(entry HistoryEntry) (HistoryEntry, error)
+	ListHistory(filter HistoryFilter) ([]HistoryEntry, error)
+	CountHistory(filter HistoryFilter) (int, error)
+	ClearHistory() error
+}
+
 // AppState holds the thread-safe global reactive state of the Boomerang application.
 type AppState struct {
 	mu sync.RWMutex
@@ -48,6 +56,9 @@ type AppState struct {
 	// HTTP Client Executor
 	executor RequestExecutor
 	cancelFn context.CancelFunc
+
+	// History & Scratchpad persistence
+	historyStore HistoryStore
 
 	// Active Request & Response
 	ActiveRequest  RequestModel
@@ -134,6 +145,20 @@ func (s *AppState) SetExecutor(exec RequestExecutor) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.executor = exec
+}
+
+// SetHistoryStore attaches a persistent history store for logging completed request executions.
+func (s *AppState) SetHistoryStore(store HistoryStore) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.historyStore = store
+}
+
+// HistoryStore returns the configured HistoryStore if any.
+func (s *AppState) HistoryStore() HistoryStore {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.historyStore
 }
 
 // SetInterpolator registers the template interpolation functions for request execution and string resolution.
@@ -772,6 +797,8 @@ func (s *AppState) SendRequest() {
 			}
 		}
 	}
+	activeEnv := s.ActiveEnv
+	histStore := s.historyStore
 	s.InFlightStage = 3
 	s.mu.Unlock()
 
@@ -835,12 +862,17 @@ func (s *AppState) SendRequest() {
 			}
 		}
 
+		elapsedMs := time.Since(startTime).Milliseconds()
+		if histStore != nil {
+			_, _ = histStore.RecordHistory(buildHistoryEntry(reqCopy, resp, activeEnv, elapsedMs))
+		}
+
 		s.mu.Lock()
 		s.ActiveResponse = resp
 		s.IsLoading = false
 		s.InFlightStage = 0
 		s.cancelFn = nil
-		s.ElapsedMs = time.Since(startTime).Milliseconds()
+		s.ElapsedMs = elapsedMs
 		s.mu.Unlock()
 
 		s.RequestRedraw()
@@ -866,4 +898,30 @@ func (s *AppState) BindServices(services ui.Services) {
 	s.SetRedrawFunc(func() {
 		services.Invalidate()
 	})
+}
+
+func buildHistoryEntry(req RequestModel, resp *ResponseModel, activeEnv string, fallbackMs int64) HistoryEntry {
+	entry := HistoryEntry{
+		RequestID:       req.ID,
+		Method:          req.Method,
+		URL:             req.URL,
+		DurationMs:      fallbackMs,
+		EnvironmentName: activeEnv,
+		ExecutedAt:      time.Now().UTC(),
+		Request:         CloneRequestModel(req),
+	}
+	if resp != nil {
+		respCopy := *resp
+		entry.Response = &respCopy
+		entry.StatusCode = resp.StatusCode
+		entry.StatusText = resp.StatusText
+		entry.SizeBytes = resp.SizeBytes
+		entry.Protocol = resp.Proto
+		entry.Error = resp.Error
+		entry.Telemetry = resp.Telemetry
+		if d := resp.Duration.Milliseconds(); d > 0 {
+			entry.DurationMs = d
+		}
+	}
+	return entry
 }
