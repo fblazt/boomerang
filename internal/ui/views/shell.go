@@ -13,8 +13,11 @@ func MainWorkspaceView(c *ui.Context, state *models.AppState) ui.Element {
 	state.View(func(s *models.AppState) {
 		mode = s.WorkspaceMode
 	})
-	if mode == "stream" {
+	switch mode {
+	case "stream":
 		return RealtimeView(c, state)
+	case "graphql":
+		return GraphQLView(c, state)
 	}
 
 	return ui.Column(c).

@@ -141,6 +141,7 @@ func SidebarView(c *ui.Context, state *models.AppState) ui.Element {
 				Children(func() {
 					renderStreamItem(c, state, "Order Live Feed", "WSS", "wss://stream.internal.net/orders")
 					renderStreamItem(c, state, "Telemetry SSE", "SSE", "https://stream.internal.net/sse")
+					renderGraphQLLaunchItem(c, state)
 				})
 
 			// Section 3: History & Runner Quick Launch + Workspace Summary
@@ -624,6 +625,38 @@ func renderStreamItem(c *ui.Context, state *models.AppState, name, proto, url st
 	row.Children(func() {
 		primitives.KeycapBadge(c, proto)
 		ui.Text(c, name).
+			Font(theme.FontSans).
+			FontSize(theme.SizeBase).
+			TextColor(theme.TextPrimary)
+	})
+}
+
+func renderGraphQLLaunchItem(c *ui.Context, state *models.AppState) {
+	var isSelected bool
+	state.View(func(s *models.AppState) {
+		isSelected = s.WorkspaceMode == "graphql"
+	})
+	bg := theme.SurfaceSubPlane
+	if isSelected {
+		bg = theme.SurfaceActive
+	}
+	row := ui.Row(c).
+		Height(28).
+		PaddingX(8).
+		Radius(5).
+		Background(bg).
+		AlignItems(ui.Center).
+		Gap(8).
+		Focusable()
+	if isSelected {
+		row.Border(1, theme.BorderMedium)
+	}
+	if row.Clicked() {
+		state.OpenGraphQLExplorer("")
+	}
+	row.Children(func() {
+		primitives.KeycapBadge(c, "GQL")
+		ui.Text(c, "GraphQL Explorer").
 			Font(theme.FontSans).
 			FontSize(theme.SizeBase).
 			TextColor(theme.TextPrimary)
