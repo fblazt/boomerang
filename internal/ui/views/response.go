@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/models"
@@ -16,12 +17,16 @@ func ResponseView(c *ui.Context, state *models.AppState) ui.Element {
 	var isLoading bool
 	var elapsedMs int64
 	var method string
+	var stage int
+	var hasAuth bool
 
 	state.View(func(s *models.AppState) {
 		resp = s.ActiveResponse
 		isLoading = s.IsLoading
 		elapsedMs = s.ElapsedMs
 		method = s.ActiveRequest.Method
+		stage = s.InFlightStage
+		hasAuth = s.ActiveRequest.AuthType != "" && s.ActiveRequest.AuthType != "none"
 	})
 
 	return ui.Column(c).
@@ -33,7 +38,7 @@ func ResponseView(c *ui.Context, state *models.AppState) ui.Element {
 		Gap(10).
 		Children(func() {
 			if isLoading {
-				renderInFlightView(c, method, elapsedMs)
+				renderInFlightView(c, method, elapsedMs, stage, hasAuth)
 				return
 			}
 
@@ -53,9 +58,12 @@ func ResponseView(c *ui.Context, state *models.AppState) ui.Element {
 		})
 }
 
-func renderInFlightView(c *ui.Context, method string, elapsedMs int64) {
+func renderInFlightView(c *ui.Context, method string, elapsedMs int64, stage int, hasAuth bool) {
 	if method == "" {
 		method = "GET"
+	}
+	if stage <= 0 {
+		stage = 3
 	}
 	ui.Column(c).
 		Grow(1).
@@ -73,18 +81,22 @@ func renderInFlightView(c *ui.Context, method string, elapsedMs int64) {
 						TextColor(theme.RimFocus)
 				})
 
-			// Stepper indicator (Brilliant Screen 02)
+			// Stepper indicator driven by live execution stage
 			ui.Row(c).
 				AlignItems(ui.Center).
 				Gap(8).
 				Children(func() {
-					renderStepBadge(c, "1. Pre-Script", true)
+					authLabel := "2. Auth"
+					if hasAuth {
+						authLabel = "2. OAuth2"
+					}
+					renderStepBadge(c, "1. Pre-Script", stage >= 1)
 					ui.Text(c, "→").Font(theme.FontMono).FontSize(11).TextColor(theme.TextDim)
-					renderStepBadge(c, "2. OAuth2", true)
+					renderStepBadge(c, authLabel, stage >= 2 && (hasAuth || stage >= 3))
 					ui.Text(c, "→").Font(theme.FontMono).FontSize(11).TextColor(theme.TextDim)
-					renderStepBadge(c, "3. Dispatch", true)
+					renderStepBadge(c, "3. Dispatch", stage >= 3)
 					ui.Text(c, "→").Font(theme.FontMono).FontSize(11).TextColor(theme.TextDim)
-					renderStepBadge(c, "4. Tests", false)
+					renderStepBadge(c, "4. Tests", stage >= 4)
 				})
 		})
 }
@@ -128,6 +140,8 @@ func renderEmptyState(c *ui.Context) {
 }
 
 func renderErrorDiagnostic(c *ui.Context, resp *models.ResponseModel) {
+	title, hint := classifyRequestError(resp.Error)
+
 	ui.Column(c).
 		Grow(1).
 		Padding(16).
@@ -141,8 +155,12 @@ func renderErrorDiagnostic(c *ui.Context, resp *models.ResponseModel) {
 				AlignItems(ui.Center).
 				Gap(8).
 				Children(func() {
-					primitives.StatusCodeBadge(c, 502, "ERROR")
-					ui.Text(c, "Request Failed").
+					if resp.StatusCode > 0 {
+						primitives.StatusCodeBadge(c, resp.StatusCode, resp.StatusText)
+					} else {
+						renderTransportErrorBadge(c, "TRANSPORT ERR")
+					}
+					ui.Text(c, title).
 						Font(theme.FontSans).
 						FontSize(theme.SizeBody).
 						Bold().
@@ -154,11 +172,48 @@ func renderErrorDiagnostic(c *ui.Context, resp *models.ResponseModel) {
 				FontSize(theme.SizeBase).
 				TextColor(theme.TextPrimary)
 
-			ui.Text(c, "Ensure upstream service is reachable and local transport policy allows network egress.").
+			if resp.Telemetry.Total > 0 {
+				TelemetryWaterfallBar(c, resp.Telemetry)
+			}
+
+			ui.Text(c, hint).
 				Font(theme.FontSans).
 				FontSize(theme.SizeCaption).
 				TextColor(theme.TextDim)
 		})
+}
+
+func renderTransportErrorBadge(c *ui.Context, label string) {
+	s := primitives.GetStatusKeycapStyle(500)
+	ui.Row(c).
+		Height(20).
+		PaddingX(7).
+		Radius(5).
+		LinearGradient(ui.LinearGradient{From: s.BgFrom, To: s.BgTo, Angle: 180}).
+		Border(1, s.BorderColor).
+		Shadow(0, 2, 0, 0, s.ShadowColor).
+		Center().
+		Children(func() {
+			ui.Text(c, label).
+				Font(theme.FontMono).
+				FontSize(theme.SizeBadge).
+				Bold().
+				TextColor(s.TextColor)
+		})
+}
+
+func classifyRequestError(errMsg string) (string, string) {
+	lower := strings.ToLower(errMsg)
+	switch {
+	case strings.Contains(lower, "x509") || strings.Contains(lower, "tls") || strings.Contains(lower, "certificate"):
+		return "Request Failed", "TLS/mTLS verification failed. Check Pinned Root CA, client identity, or Strict SSL in Vault Transport Policy."
+	case strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timeout"):
+		return "Request Failed", "Upstream timed out before completing the response. Check TTFB bottleneck or upstream service health."
+	case strings.Contains(lower, "context canceled"):
+		return "Request Failed", "Request dispatch was canceled before completion."
+	default:
+		return "Request Failed", "Ensure upstream service is reachable and local transport policy allows network egress."
+	}
 }
 
 func renderResponseHeader(c *ui.Context, resp *models.ResponseModel) {
@@ -169,7 +224,7 @@ func renderResponseHeader(c *ui.Context, resp *models.ResponseModel) {
 
 			ui.Box(c).Width(12)
 
-			ui.Text(c, fmt.Sprintf("%d ms", resp.Duration.Milliseconds())).
+			ui.Text(c, formatDurationBadge(resp)).
 				Font(theme.FontMono).
 				FontSize(theme.SizeBase).
 				TextColor(theme.TextPrimary)
@@ -188,18 +243,22 @@ func renderResponseHeader(c *ui.Context, resp *models.ResponseModel) {
 
 			ui.Text(c, " • ").TextColor(theme.TextDim)
 
-			ui.Row(c).
-				PaddingX(6).
-				PaddingY(2).
-				Radius(4).
-				Background(theme.SurfaceCardTop).
-				Border(1, theme.BorderSubtle).
-				Children(func() {
-					ui.Text(c, proto).
-						Font(theme.FontMono).
-						FontSize(theme.SizeCaption).
-						TextColor(theme.RimFocus)
-				})
+			renderHeaderPill(c, proto, theme.RimFocus)
+
+			if resp.Telemetry.TLSVersion != "" {
+				ui.Box(c).Width(6)
+				renderHeaderPill(c, resp.Telemetry.TLSVersion, ui.RGB(0x34, 0xD3, 0x99))
+			}
+
+			if resp.Telemetry.RemoteAddr != "" {
+				ui.Box(c).Width(6)
+				renderHeaderPill(c, resp.Telemetry.RemoteAddr, theme.TextMuted)
+			}
+
+			if resp.Telemetry.ConnReused {
+				ui.Box(c).Width(6)
+				renderHeaderPill(c, "REUSED", theme.TextMuted)
+			}
 
 			ui.Box(c).Grow(1)
 
@@ -224,6 +283,29 @@ func renderResponseHeader(c *ui.Context, resp *models.ResponseModel) {
 					TextColor(theme.TextMuted)
 			})
 		})
+}
+
+func renderHeaderPill(c *ui.Context, text string, color ui.Color) {
+	ui.Row(c).
+		PaddingX(6).
+		PaddingY(2).
+		Radius(4).
+		Background(theme.SurfaceCardTop).
+		Border(1, theme.BorderSubtle).
+		Children(func() {
+			ui.Text(c, text).
+				Font(theme.FontMono).
+				FontSize(theme.SizeCaption).
+				TextColor(color)
+		})
+}
+
+func formatDurationBadge(resp *models.ResponseModel) string {
+	ms := resp.Duration.Milliseconds()
+	if ms == 0 && resp.Telemetry.TotalMicros > 0 && resp.Telemetry.TotalMicros < 1000 {
+		return fmt.Sprintf("%.2f ms", float64(resp.Telemetry.TotalMicros)/1000.0)
+	}
+	return fmt.Sprintf("%d ms", ms)
 }
 
 // TelemetryWaterfallBar renders a segmented progress bar of DNS, TCP, TLS, TTFB, and DL timings.

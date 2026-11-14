@@ -800,3 +800,61 @@ func TestRequestTabsView_SettingsInteractiveToggles(t *testing.T) {
 		t.Fatal("expected overrides cleared after reset")
 	}
 }
+
+func TestResponseView_ErrorClassificationConnectionTelemetryAndStepper(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ActiveRequest.AuthType = "bearer"
+	state.IsLoading = true
+	state.InFlightStage = 3
+	state.ElapsedMs = 17
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		ResponseView(c, state)
+	}, 1000, 500)
+	tt.Frame()
+
+	if !tt.HasText("1. Pre-Script") || !tt.HasText("2. OAuth2") || !tt.HasText("3. Dispatch") || !tt.HasText("4. Tests") {
+		t.Fatal("expected live in-flight stepper labels")
+	}
+
+	// Transport TLS error should not claim hardcoded 502 ERROR
+	state.IsLoading = false
+	state.SetResponse(&models.ResponseModel{
+		Error: "tls: failed to verify certificate: x509: unknown authority",
+	})
+	tt.Frame()
+
+	if !tt.HasText("TRANSPORT ERR") {
+		t.Fatal("expected TRANSPORT ERR badge for transport-level failure")
+	}
+	if tt.HasText("502 ERROR") {
+		t.Fatal("must not show hardcoded 502 ERROR for TLS transport failure")
+	}
+	if !tt.HasText("TLS/mTLS verification failed") {
+		t.Fatal("expected TLS hint diagnostic message")
+	}
+
+	// HTTP response with connection telemetry & sub-ms timing
+	state.SetResponse(&models.ResponseModel{
+		StatusCode: 200,
+		StatusText: "200 OK",
+		Duration:   0,
+		SizeBytes:  64,
+		Proto:      "HTTP/2.0",
+		Body:       `{"ok":true}`,
+		Telemetry: models.Telemetry{
+			TotalMicros: 420,
+			RemoteAddr:  "10.24.8.19:8443",
+			TLSVersion:  "TLS 1.3",
+			ConnReused:  true,
+		},
+	})
+	tt.Frame()
+
+	if !tt.HasText("0.42 ms") {
+		t.Fatal("expected sub-ms formatted duration badge")
+	}
+	if !tt.HasText("TLS 1.3") || !tt.HasText("10.24.8.19:8443") || !tt.HasText("REUSED") {
+		t.Fatal("expected connection telemetry pills in response header")
+	}
+}

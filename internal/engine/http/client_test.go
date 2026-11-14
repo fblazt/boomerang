@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -432,5 +433,39 @@ func TestClient_FollowRedirects_And_SettingOverrides(t *testing.T) {
 	})
 	if eff.StrictSSL || eff.Protocol != "HTTP/1.1" {
 		t.Fatalf("expected StrictSSL=false and Protocol=HTTP/1.1, got %+v", eff)
+	}
+}
+
+func TestTracer_ConnectionTelemetryAndSubMs(t *testing.T) {
+	tc := NewTraceCollector()
+	tr := tc.ClientTrace()
+
+	tr.ConnectStart("tcp", "10.24.8.19:8443")
+	tr.ConnectDone("tcp", "10.24.8.19:8443", nil)
+	tr.TLSHandshakeStart()
+	tr.TLSHandshakeDone(tls.ConnectionState{
+		Version:     tls.VersionTLS13,
+		CipherSuite: tls.TLS_AES_128_GCM_SHA256,
+	}, nil)
+	tr.GotConn(httptrace.GotConnInfo{Reused: true})
+	tr.WroteRequest(httptrace.WroteRequestInfo{})
+	tr.GotFirstResponseByte()
+	tc.MarkBodyDone()
+
+	telem := tc.Telemetry()
+	if telem.RemoteAddr != "10.24.8.19:8443" {
+		t.Fatalf("expected RemoteAddr 10.24.8.19:8443, got %q", telem.RemoteAddr)
+	}
+	if telem.TLSVersion != "TLS 1.3" {
+		t.Fatalf("expected TLSVersion TLS 1.3, got %q", telem.TLSVersion)
+	}
+	if telem.TLSCipher == "" {
+		t.Fatal("expected non-empty TLSCipher")
+	}
+	if !telem.ConnReused {
+		t.Fatal("expected ConnReused=true")
+	}
+	if telem.TotalMicros < 0 {
+		t.Fatalf("expected TotalMicros >= 0, got %d", telem.TotalMicros)
 	}
 }

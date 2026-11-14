@@ -6,14 +6,19 @@ import (
 	"time"
 )
 
-// Telemetry holds nanosecond-precision network breakdown metrics.
+// Telemetry holds network breakdown timing and connection diagnostics.
 type Telemetry struct {
-	DNS      int64 `json:"dns"`      // DNS lookup duration in ms
-	TCP      int64 `json:"tcp"`      // TCP connect duration in ms
-	TLS      int64 `json:"tls"`      // TLS handshake duration in ms
-	TTFB     int64 `json:"ttfb"`     // Time to first byte in ms
-	Download int64 `json:"download"` // Content download duration in ms
-	Total    int64 `json:"total"`    // Total roundtrip time in ms
+	DNS         int64  `json:"dns"`                    // DNS lookup duration in ms
+	TCP         int64  `json:"tcp"`                    // TCP connect duration in ms
+	TLS         int64  `json:"tls"`                    // TLS handshake duration in ms
+	TTFB        int64  `json:"ttfb"`                   // Time to first byte in ms
+	Download    int64  `json:"download"`               // Content download duration in ms
+	Total       int64  `json:"total"`                  // Total roundtrip time in ms
+	TotalMicros int64  `json:"total_micros,omitempty"` // Total roundtrip time in microseconds
+	RemoteAddr  string `json:"remote_addr,omitempty"`  // Remote IP:Port dialed
+	TLSVersion  string `json:"tls_version,omitempty"`  // Negotiated TLS version (e.g. TLS 1.3)
+	TLSCipher   string `json:"tls_cipher,omitempty"`   // Negotiated TLS cipher suite
+	ConnReused  bool   `json:"conn_reused,omitempty"`  // Whether pooled TCP/TLS connection was reused
 }
 
 // KeyValuePair represents query parameters, headers, or form fields.

@@ -53,6 +53,7 @@ type AppState struct {
 	ActiveRequest  RequestModel
 	ActiveResponse *ResponseModel
 	IsLoading      bool
+	InFlightStage  int // 1: Pre-Script, 2: Auth, 3: Dispatch, 4: Tests
 	ElapsedMs      int64
 
 	// Environment Engine / Vault Manager
@@ -743,6 +744,7 @@ func (s *AppState) SendRequest() {
 		return
 	}
 	s.IsLoading = true
+	s.InFlightStage = 1
 	s.ElapsedMs = 0
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancelFn = cancel
@@ -757,6 +759,9 @@ func (s *AppState) SendRequest() {
 		activeVars := s.getActiveVariablesLocked()
 		reqCopy = s.interpolateFn(reqCopy, activeVars)
 	}
+	if reqCopy.AuthType != "" && reqCopy.AuthType != "none" {
+		s.InFlightStage = 2
+	}
 
 	if reqCopy.TransportPolicy == nil {
 		for _, env := range s.Environments {
@@ -767,6 +772,7 @@ func (s *AppState) SendRequest() {
 			}
 		}
 	}
+	s.InFlightStage = 3
 	s.mu.Unlock()
 
 	s.RequestRedraw()
@@ -832,6 +838,7 @@ func (s *AppState) SendRequest() {
 		s.mu.Lock()
 		s.ActiveResponse = resp
 		s.IsLoading = false
+		s.InFlightStage = 0
 		s.cancelFn = nil
 		s.ElapsedMs = time.Since(startTime).Milliseconds()
 		s.mu.Unlock()
@@ -848,6 +855,7 @@ func (s *AppState) CancelRequest() {
 		s.cancelFn = nil
 	}
 	s.IsLoading = false
+	s.InFlightStage = 0
 	s.mu.Unlock()
 
 	s.RequestRedraw()
