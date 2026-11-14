@@ -19,12 +19,14 @@ func HeaderView(c *ui.Context, state *models.AppState) ui.Element {
 	c.OnWindowShortcut(ui.Cmd, ui.KeyH, func() { state.ToggleHistoryModal() })
 	c.OnWindowShortcut(ui.Cmd, ui.KeyR, func() { state.ToggleRunnerModal() })
 	c.OnWindowShortcut(ui.Cmd, ui.KeyI, func() { state.ToggleImportModal() })
+	c.OnWindowShortcut(ui.Cmd, ui.KeyK, func() { state.ToggleCommandPalette() })
 	c.OnWindowShortcut(0, ui.KeyEscape, func() {
 		state.CloseEnvDropdown()
 		state.CloseVaultModal()
 		state.CloseHistoryModal()
 		state.CloseRunnerModal()
 		state.CloseImportModal()
+		state.CloseCommandPalette()
 	})
 
 	return ui.Row(c).
@@ -80,12 +82,16 @@ func HeaderView(c *ui.Context, state *models.AppState) ui.Element {
 				AlignItems(ui.Center).
 				Children(func() {
 					// Command Palette shortcut cap
-					ui.Row(c).
+					palBtn := ui.Row(c).
 						Gap(4).
 						AlignItems(ui.Center).
-						Children(func() {
-							primitives.ShortcutCap(c, "⌘K")
-						})
+						Focusable()
+					if palBtn.Clicked() {
+						state.OpenCommandPalette()
+					}
+					palBtn.Children(func() {
+						primitives.ShortcutCap(c, "⌘K")
+					})
 
 					// Active Environment Indicator / Switcher Pill with Dropdown
 					var currentEnv string

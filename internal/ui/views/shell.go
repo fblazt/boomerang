@@ -70,5 +70,8 @@ func ShellView(c *ui.Context, state *models.AppState) ui.Element {
 
 			// Universal Importer Modal Overlay
 			modals.ImportModalHost(c, state)
+
+			// Global Command Palette Modal Overlay (⌘K)
+			modals.PaletteModalHost(c, state)
 		})
 }

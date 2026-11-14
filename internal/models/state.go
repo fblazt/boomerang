@@ -202,10 +202,12 @@ type AppState struct {
 	HistoryStatusMessage string
 
 	// Navigation & View Mode
-	ActiveTab      string // params, headers, body, auth, settings
-	SidebarOpen    bool
-	CommandPalOpen bool
-	ShowAuthSecret bool
+	ActiveTab            string // params, headers, body, auth, settings
+	SidebarOpen          bool
+	CommandPalOpen       bool
+	PaletteQuery         string
+	PaletteSelectedIndex int
+	ShowAuthSecret       bool
 }
 
 // NewAppState initializes an AppState with default values.
