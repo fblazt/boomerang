@@ -262,3 +262,29 @@ func TestSidebar_ScratchpadDraftPersistenceAndPromotion(t *testing.T) {
 		t.Fatalf("expected 1 draft left after promoting active draft to collection, got %d", len(restarted.Drafts))
 	}
 }
+
+func TestSidebar_ExecutionHistoryLaunchesModal(t *testing.T) {
+	db, err := storage.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatalf("OpenSQLite failed: %v", err)
+	}
+	defer db.Close()
+
+	state, _, _ := setupSidebarTestState(t)
+	state.SetHistoryStore(db)
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(theme.NewBoomerangTheme())
+		ShellView(c, state)
+	}, 1280, 840)
+	tt.Frame()
+
+	if err := tt.Click("Execution History"); err != nil {
+		t.Fatalf("click Execution History: %v", err)
+	}
+	tt.Frame()
+
+	if !state.ShowHistoryModal || !tt.HasText("0 Executed Calls") || !tt.HasText("Export HAR") {
+		t.Fatal("expected History modal launched from sidebar Execution History button")
+	}
+}

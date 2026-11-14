@@ -53,5 +53,8 @@ func ShellView(c *ui.Context, state *models.AppState) ui.Element {
 
 			// Environment & Secret Vault Manager Modal Overlay
 			modals.VaultModalHost(c, state)
+
+			// Execution History & HAR Timeline Modal Overlay
+			modals.HistoryModalHost(c, state)
 		})
 }

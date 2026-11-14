@@ -38,6 +38,9 @@ type EnvironmentManager interface {
 // FilePickerFunc opens a file selector and invokes onPicked with the selected path if confirmed.
 type FilePickerFunc func(title string, extensions []string, onPicked func(path string))
 
+// SaveFilePickerFunc opens a save-file dialog and invokes onPicked with the selected path if confirmed.
+type SaveFilePickerFunc func(title, defaultName string, extensions []string, onPicked func(path string))
+
 // HistoryStore defines persistence operations for executed request history logs.
 type HistoryStore interface {
 	RecordHistory(entry HistoryEntry) (HistoryEntry, error)
@@ -76,8 +79,9 @@ type AppState struct {
 	mu sync.RWMutex
 
 	// UI Redraw trigger callback (e.g. services.Invalidate or test hook)
-	redrawFn   func()
-	filePicker FilePickerFunc
+	redrawFn       func()
+	filePicker     FilePickerFunc
+	saveFilePicker SaveFilePickerFunc
 
 	// HTTP Client Executor
 	executor RequestExecutor
@@ -126,6 +130,14 @@ type AppState struct {
 	// Template Interpolator hooks
 	interpolateFn    func(req RequestModel, vars map[string]string) RequestModel
 	interpolateStrFn func(template string, vars map[string]string) string
+
+	// History Timeline Modal State
+	ShowHistoryModal     bool
+	HistoryEntries       []HistoryEntry
+	HistoryTotalCount    int
+	HistoryFilter        HistoryFilter
+	SelectedHistoryID    string
+	HistoryStatusMessage string
 
 	// Navigation & View Mode
 	ActiveTab      string // params, headers, body, auth, settings
@@ -183,6 +195,23 @@ func (s *AppState) PickFile(title string, extensions []string, onPicked func(pat
 	s.mu.RUnlock()
 	if fp != nil && onPicked != nil {
 		fp(title, extensions, onPicked)
+	}
+}
+
+// SetSaveFilePicker attaches a save-file dialog handler (native OS dialog or test stub).
+func (s *AppState) SetSaveFilePicker(fn SaveFilePickerFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.saveFilePicker = fn
+}
+
+// PickSaveFile triggers the configured save-file dialog if available.
+func (s *AppState) PickSaveFile(title, defaultName string, extensions []string, onPicked func(path string)) {
+	s.mu.RLock()
+	sp := s.saveFilePicker
+	s.mu.RUnlock()
+	if sp != nil && onPicked != nil {
+		sp(title, defaultName, extensions, onPicked)
 	}
 }
 

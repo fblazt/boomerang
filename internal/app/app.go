@@ -124,6 +124,29 @@ func NewApp(opts Options) *App {
 		}()
 	})
 
+	st.SetSaveFilePicker(func(title, defaultName string, extensions []string, onPicked func(path string)) {
+		go func() {
+			var filters []mygo.FileFilter
+			if len(extensions) > 0 {
+				filters = []mygo.FileFilter{{
+					Name:       "HAR Archive",
+					Extensions: extensions,
+				}}
+			}
+			savePath, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+				Parent:            app.win,
+				Title:             title,
+				DefaultPath:       defaultName,
+				Filters:           filters,
+				CreateDirectories: true,
+			})
+			if err != nil || savePath == "" {
+				return
+			}
+			onPicked(savePath)
+		}()
+	})
+
 	return app
 }
 

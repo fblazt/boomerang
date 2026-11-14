@@ -16,9 +16,11 @@ func HeaderView(c *ui.Context, state *models.AppState) ui.Element {
 	c.OnWindowShortcut(ui.Cmd, ui.Key3, func() { state.SwitchEnvByIndex(2) })
 	c.OnWindowShortcut(ui.Cmd, ui.Key4, func() { state.SwitchEnvByIndex(3) })
 	c.OnWindowShortcut(ui.Cmd, ui.KeyE, func() { state.OpenVaultModal() })
+	c.OnWindowShortcut(ui.Cmd, ui.KeyH, func() { state.ToggleHistoryModal() })
 	c.OnWindowShortcut(0, ui.KeyEscape, func() {
 		state.CloseEnvDropdown()
 		state.CloseVaultModal()
+		state.CloseHistoryModal()
 	})
 
 	return ui.Row(c).

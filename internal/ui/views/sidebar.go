@@ -150,22 +150,25 @@ func SidebarView(c *ui.Context, state *models.AppState) ui.Element {
 				BorderColor(theme.BorderSubtle).
 				Padding(8, 0, 0, 0).
 				Children(func() {
-					ui.Row(c).
+					histRow := ui.Row(c).
 						Height(28).
 						PaddingX(8).
 						Radius(4).
 						AlignItems(ui.Center).
 						Gap(8).
-						Focusable().
-						Children(func() {
-							ui.Text(c, "⏱").Font(theme.FontSans).FontSize(theme.SizeBase)
-							ui.Text(c, "Execution History").
-								Font(theme.FontSans).
-								FontSize(theme.SizeBase).
-								TextColor(theme.TextSecondary)
-							ui.Box(c).Grow(1)
-							primitives.ShortcutCap(c, "⌘H")
-						})
+						Focusable()
+					if histRow.Clicked() {
+						state.OpenHistoryModal()
+					}
+					histRow.Children(func() {
+						ui.Text(c, "⏱").Font(theme.FontSans).FontSize(theme.SizeBase)
+						ui.Text(c, "Execution History").
+							Font(theme.FontSans).
+							FontSize(theme.SizeBase).
+							TextColor(theme.TextSecondary)
+						ui.Box(c).Grow(1)
+						primitives.ShortcutCap(c, "⌘H")
+					})
 
 					ui.Row(c).
 						Height(28).
