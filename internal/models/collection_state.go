@@ -43,6 +43,7 @@ func (s *AppState) SelectCollectionItem(collectionID, itemID string) bool {
 
 	s.ActiveCollectionID = collectionID
 	s.ActiveItemID = found.ID
+	s.ActiveDraftID = ""
 	s.ActiveRequest = CloneRequestModel(found.Request)
 	s.mu.Unlock()
 
@@ -101,11 +102,26 @@ func (s *AppState) SaveActiveRequest() error {
 	}
 
 	s.mu.Lock()
+	promotedDraftID := s.ActiveDraftID
+	draftStore := s.draftStore
 	s.Collections = store.Collections()
 	s.ActiveCollectionID = colID
 	s.ActiveItemID = saved.ID
+	s.ActiveDraftID = ""
 	s.ActiveRequest = CloneRequestModel(saved.Request)
+	if promotedDraftID != "" {
+		for i := range s.Drafts {
+			if s.Drafts[i].ID == promotedDraftID {
+				s.Drafts = append(s.Drafts[:i], s.Drafts[i+1:]...)
+				break
+			}
+		}
+	}
 	s.mu.Unlock()
+
+	if promotedDraftID != "" && draftStore != nil {
+		_ = draftStore.DeleteDraft(promotedDraftID)
+	}
 
 	s.RequestRedraw()
 	return nil
@@ -197,6 +213,7 @@ func (s *AppState) CreateRequestInCollection(collectionID, folderID, name string
 	s.Collections = store.Collections()
 	s.ActiveCollectionID = collectionID
 	s.ActiveItemID = item.ID
+	s.ActiveDraftID = ""
 	s.ActiveRequest = CloneRequestModel(item.Request)
 	s.mu.Unlock()
 

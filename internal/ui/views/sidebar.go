@@ -14,20 +14,24 @@ import (
 // request actions, realtime streams, and bottom quick-launch items.
 func SidebarView(c *ui.Context, state *models.AppState) ui.Element {
 	var (
-		cols         []models.Collection
-		activeColID  string
-		activeItemID string
-		selectedDir  string
-		filter       string
-		renamingID   string
-		renameDraft  string
-		collapsed    map[string]bool
+		cols          []models.Collection
+		drafts        []models.ScratchpadDraft
+		activeColID   string
+		activeItemID  string
+		activeDraftID string
+		selectedDir   string
+		filter        string
+		renamingID    string
+		renameDraft   string
+		collapsed     map[string]bool
 	)
 
 	state.View(func(s *models.AppState) {
 		cols = s.Collections
+		drafts = s.Drafts
 		activeColID = s.ActiveCollectionID
 		activeItemID = s.ActiveItemID
+		activeDraftID = s.ActiveDraftID
 		selectedDir = s.SelectedFolderID
 		filter = s.CollectionFilter
 		renamingID = s.RenamingNodeID
@@ -47,6 +51,9 @@ func SidebarView(c *ui.Context, state *models.AppState) ui.Element {
 		Padding(12).
 		Gap(10).
 		Children(func() {
+			// Section 0: Scratchpad Uncommitted Drafts
+			renderScratchpadSection(c, state, drafts, activeDraftID)
+
 			// Section 1: Collections Header + Quick Creation Actions
 			ui.Row(c).
 				AlignItems(ui.Center).
@@ -182,12 +189,89 @@ func SidebarView(c *ui.Context, state *models.AppState) ui.Element {
 						PaddingX(6).
 						AlignItems(ui.Center).
 						Children(func() {
-							ui.Text(c, fmt.Sprintf("0 Drafts • %d Collections", colCount)).
+							ui.Text(c, formatDraftSummary(len(drafts), colCount)).
 								Font(theme.FontMono).
 								FontSize(theme.SizeShortcut).
 								TextColor(theme.TextDim)
+
+							ui.Box(c).Grow(1)
+
+							renderTinyHeaderAction(c, "+ Add", "New Scratchpad Draft", func() {
+								state.NewScratchpadDraft()
+							})
 						})
 				})
+		})
+}
+
+func formatDraftSummary(draftCount, colCount int) string {
+	draftLabel := "Drafts"
+	if draftCount == 1 {
+		draftLabel = "Draft"
+	}
+	colLabel := "Collections"
+	if colCount == 1 {
+		colLabel = "Collection"
+	}
+	return fmt.Sprintf("%d %s • %d %s", draftCount, draftLabel, colCount, colLabel)
+}
+
+func renderScratchpadSection(c *ui.Context, state *models.AppState, drafts []models.ScratchpadDraft, activeDraftID string) {
+	ui.Column(c).
+		Gap(4).
+		Children(func() {
+			ui.Row(c).
+				AlignItems(ui.Center).
+				Children(func() {
+					ui.Text(c, "SCRATCHPAD").
+						Font(theme.FontSans).
+						FontSize(theme.SizeBadge).
+						TextColor(theme.TextDim).
+						Bold()
+
+					ui.Box(c).Grow(1)
+
+					renderTinyHeaderAction(c, "+ Draft", "New Scratchpad Draft", func() {
+						state.NewScratchpadDraft()
+					})
+				})
+
+			for _, d := range drafts {
+				draft := d
+				isSelected := draft.ID == activeDraftID
+				bg := theme.SurfaceSubPlane
+				if isSelected {
+					bg = theme.SurfaceActive
+				}
+
+				row := ui.Row(c).
+					Height(26).
+					PaddingX(8).
+					Radius(5).
+					Background(bg).
+					AlignItems(ui.Center).
+					Gap(7).
+					Focusable()
+
+				if isSelected {
+					row.Border(1, theme.BorderMedium)
+				}
+				if row.Clicked() {
+					state.SelectDraft(draft.ID)
+				}
+
+				row.Children(func() {
+					primitives.KeycapBadge(c, draft.Request.Method)
+					ui.Text(c, draft.Name).
+						Font(theme.FontSans).
+						FontSize(theme.SizeBase).
+						TextColor(theme.TextPrimary)
+					ui.Box(c).Grow(1)
+					renderInlineTreeBtn(c, "×", "Discard "+draft.Name, func() {
+						_ = state.DeleteDraft(draft.ID)
+					})
+				})
+			}
 		})
 }
 

@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,13 @@ type HistoryStore interface {
 	ClearHistory() error
 }
 
+// DraftStore defines persistence operations for uncommitted scratchpad drafts.
+type DraftStore interface {
+	SaveDraft(draft ScratchpadDraft) (ScratchpadDraft, error)
+	ListDrafts() ([]ScratchpadDraft, error)
+	DeleteDraft(id string) error
+}
+
 // CollectionStore defines persistence operations for collections, folders, and saved requests.
 type CollectionStore interface {
 	Collections() []Collection
@@ -75,9 +83,14 @@ type AppState struct {
 	executor RequestExecutor
 	cancelFn context.CancelFunc
 
-	// History & Collections persistence
+	// History, Drafts & Collections persistence
 	historyStore    HistoryStore
+	draftStore      DraftStore
 	collectionStore CollectionStore
+
+	// Scratchpad Drafts State
+	Drafts        []ScratchpadDraft
+	ActiveDraftID string
 
 	// Collections Tree State
 	Collections        []Collection
@@ -294,11 +307,31 @@ func (s *AppState) RequestRedraw() {
 	}
 }
 
-// Mutate performs thread-safe state mutation and triggers a redraw.
+// Mutate performs thread-safe state mutation, auto-persisting uncommitted scratchpad edits, and triggers a redraw.
 func (s *AppState) Mutate(fn func(s *AppState)) {
+	var draftSnapshot *ScratchpadDraft
+	var store DraftStore
+
 	s.mu.Lock()
+	var trackDraft bool
+	var before RequestModel
+	if s.draftStore != nil && s.ActiveItemID == "" {
+		trackDraft = true
+		before = CloneRequestModel(s.ActiveRequest)
+	}
 	fn(s)
+	if trackDraft && s.ActiveItemID == "" && !reflect.DeepEqual(before, s.ActiveRequest) {
+		snap := s.prepareDraftSnapshotLocked()
+		draftSnapshot = &snap
+		store = s.draftStore
+	}
 	s.mu.Unlock()
+
+	if draftSnapshot != nil && store != nil {
+		if saved, err := store.SaveDraft(*draftSnapshot); err == nil {
+			s.upsertDraftSnapshot(saved)
+		}
+	}
 
 	s.RequestRedraw()
 }

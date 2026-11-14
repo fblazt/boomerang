@@ -5,6 +5,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/engine/collection"
+	"github.com/fblazt/boomerang/internal/engine/storage"
 	"github.com/fblazt/boomerang/internal/models"
 	"github.com/fblazt/boomerang/internal/ui/theme"
 )
@@ -33,7 +34,7 @@ func TestSidebar_NestedTreeAndFolderCollapse(t *testing.T) {
 	}, 320, 800)
 	tt.Frame()
 
-	for _, want := range []string{"Core API", "Users Service", "Auth Verify", "Catalog", "Product Feed", "0 Drafts • 1 Collections"} {
+	for _, want := range []string{"Core API", "Users Service", "Auth Verify", "Catalog", "Product Feed", "0 Drafts • 1 Collection"} {
 		if !tt.HasText(want) {
 			t.Fatalf("expected %q in sidebar tree", want)
 		}
@@ -187,5 +188,77 @@ func TestSidebar_CreateCollectionFolderRequestAndFilter(t *testing.T) {
 	}
 	if tt.HasText("Delete Session") {
 		t.Fatal("expected Delete Session hidden by filter 'auth'")
+	}
+}
+
+func TestSidebar_ScratchpadDraftPersistenceAndPromotion(t *testing.T) {
+	dbPath := t.TempDir() + "/drafts.db"
+	db, err := storage.OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatalf("OpenSQLite failed: %v", err)
+	}
+	defer db.Close()
+
+	state, _, colDir := setupSidebarTestState(t)
+	state.SetDraftStore(db)
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(theme.NewBoomerangTheme())
+		ShellView(c, state)
+	}, 1280, 840)
+	tt.Frame()
+
+	// Create Draft 1 via + Draft button and edit URL/method
+	if err := tt.Click("+ Draft"); err != nil {
+		t.Fatalf("click + Draft: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("Untitled Request") || !tt.HasText("1 Draft • 1 Collection") {
+		t.Fatal("expected 'Untitled Request' and '1 Draft • 1 Collection' footer")
+	}
+
+	state.SetMethod("POST")
+	state.SetURL("https://scratch.example.com/webhook")
+	tt.Frame()
+
+	// Create Draft 2 via + Add footer button and verify independent isolation
+	if err := tt.Click("+ Add"); err != nil {
+		t.Fatalf("click + Add: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("Untitled Request 2") || !tt.HasText("2 Drafts • 1 Collection") {
+		t.Fatal("expected second independent draft and '2 Drafts • 1 Collection'")
+	}
+
+	state.SetURL("https://scratch.example.com/second")
+	tt.Frame()
+
+	// Switch back to Draft 1 and confirm its URL & method stayed independent
+	if err := tt.Click("Untitled Request"); err != nil {
+		t.Fatalf("select first draft: %v", err)
+	}
+	tt.Frame()
+	if state.ActiveRequest.URL != "https://scratch.example.com/webhook" || state.ActiveRequest.Method != "POST" {
+		t.Fatalf("expected Draft 1 state restored cleanly, got %s %s", state.ActiveRequest.Method, state.ActiveRequest.URL)
+	}
+
+	// Simulate fresh app restart reading SQLite drafts
+	restarted := models.NewAppState(nil)
+	reloadedCols, err := collection.NewStore(colDir)
+	if err != nil {
+		t.Fatalf("reload collections: %v", err)
+	}
+	restarted.SetCollectionStore(reloadedCols)
+	restarted.SetDraftStore(db)
+	if len(restarted.Drafts) != 2 {
+		t.Fatalf("expected 2 drafts restored from SQLite on restart, got %d", len(restarted.Drafts))
+	}
+
+	// Promote Draft 1 into collection via Save button and assert it disappears from Drafts
+	if err := restarted.SaveActiveRequest(); err != nil {
+		t.Fatalf("SaveActiveRequest on draft failed: %v", err)
+	}
+	if len(restarted.Drafts) != 1 {
+		t.Fatalf("expected 1 draft left after promoting active draft to collection, got %d", len(restarted.Drafts))
 	}
 }

@@ -80,6 +80,7 @@ func NewApp(opts Options) *App {
 	}
 	if dbStore != nil {
 		st.SetHistoryStore(dbStore)
+		st.SetDraftStore(dbStore)
 	}
 
 	// Initialize local filesystem collections store (or in-memory fallback)
