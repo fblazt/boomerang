@@ -85,6 +85,13 @@ func (s *AppState) SetRunnerFilter(filter string) {
 	})
 }
 
+// SetRunnerStatusMessage updates the informational status bar inside the Suite Runner modal.
+func (s *AppState) SetRunnerStatusMessage(msg string) {
+	s.Mutate(func(state *AppState) {
+		state.RunnerStatusMessage = msg
+	})
+}
+
 // StartSuiteRun launches a concurrent collection suite execution in the background.
 func (s *AppState) StartSuiteRun() {
 	s.mu.Lock()

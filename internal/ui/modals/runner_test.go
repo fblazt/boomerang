@@ -2,6 +2,9 @@ package modals
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,7 +137,67 @@ func TestRunnerModal_ConcurrencySliderAndBatchExecution(t *testing.T) {
 	if gotReport.Concurrency != 16 {
 		t.Fatalf("expected Concurrency=16 in report, got %d", gotReport.Concurrency)
 	}
-	if !tt.HasText("PROGRESS 2 / 2") || !tt.HasText("Executed 2/2 requests") {
-		t.Fatal("expected live progress and executed counts in Suite Runner modal")
+	if !tt.HasText("PROGRESS 2 / 2") || !tt.HasText("1/2 ok") || !tt.HasText("1/2 pass") {
+		t.Fatal("expected live progress and assertion summary counts in Suite Runner modal")
+	}
+}
+
+func TestRunnerModal_AssertionFilterAndExportReport(t *testing.T) {
+	state := setupRunnerTestState()
+	exportPath := filepath.Join(t.TempDir(), "suite-report.json")
+	state.SetSaveFilePicker(func(_ string, _ string, _ []string, onPicked func(string)) {
+		onPicked(exportPath)
+	})
+	state.OpenRunnerModal()
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(theme.NewBoomerangTheme())
+		RunnerModalHost(c, state)
+	}, 1024, 720)
+	tt.Frame()
+
+	if err := tt.Click("Run Suite"); err != nil {
+		t.Fatalf("click Run Suite: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var done bool
+		state.View(func(s *models.AppState) {
+			done = !s.RunnerRunning && s.RunnerReport != nil
+		})
+		if done {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	tt.Frame()
+
+	for _, want := range []string{"List Health", "Billing Charge", "✓ Status 200", "✗ Expect 200: expected status 200, got 500"} {
+		if !tt.HasText(want) {
+			t.Fatalf("expected %q in assertion breakdown", want)
+		}
+	}
+
+	// Filter to Failed only
+	if err := tt.Click("Failed"); err != nil {
+		t.Fatalf("click Failed filter: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("List Health") || !tt.HasText("Billing Charge") {
+		t.Fatal("expected Failed filter to hide passing List Health and show Billing Charge")
+	}
+
+	// Export JSON report
+	if err := tt.Click("Export JSON"); err != nil {
+		t.Fatalf("click Export JSON: %v", err)
+	}
+	tt.Frame()
+
+	data, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatalf("read exported suite report: %v", err)
+	}
+	if !strings.Contains(string(data), "Billing Charge") || !strings.Contains(string(data), "failed_assertions") {
+		t.Fatalf("unexpected exported suite JSON:\n%s", string(data))
 	}
 }

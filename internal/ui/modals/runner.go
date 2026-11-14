@@ -3,8 +3,11 @@ package modals
 import (
 	"fmt"
 	"math"
+	"os"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/fblazt/boomerang/internal/engine/runner"
 	"github.com/fblazt/boomerang/internal/models"
 	"github.com/fblazt/boomerang/internal/ui/primitives"
 	"github.com/fblazt/boomerang/internal/ui/theme"
@@ -42,6 +45,7 @@ func RunnerModal(c *ui.Context, state *models.AppState) ui.Element {
 		running       bool
 		progress      models.SuiteRunProgress
 		report        *models.SuiteRunReport
+		filter        string
 		statusMsg     string
 	)
 	state.View(func(s *models.AppState) {
@@ -52,10 +56,14 @@ func RunnerModal(c *ui.Context, state *models.AppState) ui.Element {
 		running = s.RunnerRunning
 		progress = s.RunnerProgress
 		report = s.RunnerReport
+		filter = s.RunnerFilter
 		statusMsg = s.RunnerStatusMessage
 	})
 	if concurrency < 1 {
 		concurrency = 4
+	}
+	if filter == "" {
+		filter = "all"
 	}
 
 	return ui.Column(c).
@@ -68,7 +76,7 @@ func RunnerModal(c *ui.Context, state *models.AppState) ui.Element {
 			renderRunnerHeader(c, state, statusMsg)
 			renderRunnerControls(c, state, cols, selectedColID, concurrency, stopOnErr, running)
 			renderRunnerProgressBar(c, running, progress)
-			renderRunnerResultsPlaceholder(c, report, running)
+			renderRunnerResultsSummary(c, state, report, filter, running)
 		})
 }
 
@@ -289,10 +297,16 @@ func renderRunnerProgressBar(c *ui.Context, running bool, prog models.SuiteRunPr
 		})
 }
 
-func renderRunnerResultsPlaceholder(c *ui.Context, report *models.SuiteRunReport, running bool) {
+func renderRunnerResultsSummary(
+	c *ui.Context,
+	state *models.AppState,
+	report *models.SuiteRunReport,
+	filter string,
+	running bool,
+) {
 	ui.Column(c).
 		Grow(1).
-		Padding(16).
+		Padding(14, 16, 16, 16).
 		Gap(10).
 		Background(theme.CanvasDeep).
 		Radius(0, 0, 12, 12).
@@ -311,12 +325,238 @@ func renderRunnerResultsPlaceholder(c *ui.Context, report *models.SuiteRunReport
 				return
 			}
 
-			ui.Text(c, fmt.Sprintf("Executed %d/%d requests (%d passed, %d failed)",
-				len(report.Steps), report.TotalRequests, report.PassedRequests, report.FailedRequests)).
-				Font(theme.FontMono).
-				FontSize(theme.SizeBase).
-				TextColor(theme.TextPrimary)
+			// Aggregate Summary Strip
+			ui.Row(c).
+				AlignItems(ui.Center).
+				Gap(10).
+				Children(func() {
+					renderMetricCard(c, "REQUESTS",
+						fmt.Sprintf("%d/%d ok", report.PassedRequests, report.TotalRequests),
+						metricPassColor(report.FailedRequests == 0))
+					renderMetricCard(c, "ASSERTIONS",
+						fmt.Sprintf("%d/%d pass", report.PassedAssertions, report.TotalAssertions),
+						metricPassColor(report.FailedAssertions == 0))
+					renderMetricCard(c, "DURATION",
+						fmt.Sprintf("%d ms", report.TotalDurationMs),
+						theme.RimFocus)
+					renderMetricCard(c, "WORKERS",
+						fmt.Sprintf("%dx", report.Concurrency),
+						theme.TextSecondary)
+
+					ui.Box(c).Grow(1)
+
+					// Filter Tabs
+					renderRunnerChip(c, "All", filter == "all", func() {
+						state.SetRunnerFilter("all")
+					})
+					renderRunnerChip(c, "Passed", filter == "passed", func() {
+						state.SetRunnerFilter("passed")
+					})
+					renderRunnerChip(c, "Failed", filter == "failed", func() {
+						state.SetRunnerFilter("failed")
+					})
+
+					// Export Buttons
+					renderRunnerChip(c, "Export JSON", false, func() {
+						exportSuiteReport(state, *report, "json")
+					})
+					renderRunnerChip(c, "Export MD", false, func() {
+						exportSuiteReport(state, *report, "md")
+					})
+				})
+
+			// Step Execution Breakdown List
+			ui.Scroll(c).
+				Grow(1).
+				Gap(8).
+				Children(func() {
+					shown := 0
+					for _, step := range report.Steps {
+						if filter == "passed" && !step.Passed {
+							continue
+						}
+						if filter == "failed" && step.Passed {
+							continue
+						}
+						shown++
+						renderRunnerStepCard(c, step)
+					}
+					if shown == 0 {
+						ui.Column(c).
+							Padding(24).
+							Center().
+							Children(func() {
+								ui.Text(c, "No steps match the active filter.").
+									Font(theme.FontSans).
+									FontSize(theme.SizeBase).
+									TextColor(theme.TextMuted)
+							})
+					}
+				})
 		})
+}
+
+func renderMetricCard(c *ui.Context, label, value string, valueColor ui.Color) {
+	ui.Column(c).
+		Padding(6, 10, 6, 10).
+		Radius(6).
+		Gap(2).
+		Background(theme.SurfaceSubPlane).
+		Border(1, theme.BorderSubtle).
+		Children(func() {
+			ui.Text(c, label).
+				Font(theme.FontMono).
+				FontSize(theme.SizeShortcut).
+				TextColor(theme.TextDim)
+			ui.Text(c, value).
+				Font(theme.FontMono).
+				FontSize(theme.SizeBadge).
+				Bold().
+				TextColor(valueColor)
+		})
+}
+
+func renderRunnerStepCard(c *ui.Context, step models.SuiteStepResult) {
+	badgeText := "PASS"
+	badgeColor := ui.RGB(0x34, 0xD3, 0x99)
+	if !step.Passed {
+		badgeText = "FAIL"
+		badgeColor = theme.RimDanger
+	}
+
+	ui.Column(c).
+		Padding(10, 12, 10, 12).
+		Radius(6).
+		Gap(6).
+		Background(theme.SurfaceSubPlane).
+		Border(1, theme.BorderSubtle).
+		Children(func() {
+			ui.Row(c).
+				AlignItems(ui.Center).
+				Gap(8).
+				Children(func() {
+					ui.Row(c).
+						PaddingX(6).
+						PaddingY(2).
+						Radius(4).
+						Background(theme.CanvasDeep).
+						Border(1, badgeColor).
+						Children(func() {
+							ui.Text(c, badgeText).
+								Font(theme.FontMono).
+								FontSize(theme.SizeShortcut).
+								Bold().
+								TextColor(badgeColor)
+						})
+
+					ui.Text(c, step.Method).
+						Font(theme.FontMono).
+						FontSize(theme.SizeBadge).
+						Bold().
+						TextColor(theme.RimFocus)
+
+					ui.Text(c, step.Name).
+						Font(theme.FontSans).
+						FontSize(theme.SizeBase).
+						Bold().
+						TextColor(theme.TextPrimary)
+
+					ui.Text(c, step.URL).
+						Font(theme.FontMono).
+						FontSize(theme.SizeShortcut).
+						TextColor(theme.TextDim)
+
+					ui.Box(c).Grow(1)
+
+					if step.StatusCode > 0 {
+						ui.Text(c, fmt.Sprintf("%d", step.StatusCode)).
+							Font(theme.FontMono).
+							FontSize(theme.SizeBadge).
+							Bold().
+							TextColor(badgeColor)
+					}
+					ui.Text(c, fmt.Sprintf("%d ms", step.DurationMs)).
+						Font(theme.FontMono).
+						FontSize(theme.SizeShortcut).
+						TextColor(theme.TextMuted)
+				})
+
+			if step.Error != "" {
+				ui.Text(c, step.Error).
+					Font(theme.FontMono).
+					FontSize(theme.SizeShortcut).
+					TextColor(theme.RimDanger)
+			}
+
+			if len(step.Assertions) > 0 {
+				ui.Row(c).
+					Gap(6).
+					Wrap().
+					Children(func() {
+						for _, a := range step.Assertions {
+							ac := ui.RGB(0x34, 0xD3, 0x99)
+							label := "✓ " + a.Name
+							if !a.Passed {
+								ac = theme.RimDanger
+								label = "✗ " + a.Name
+								if a.Message != "" {
+									label += ": " + a.Message
+								}
+							}
+							ui.Row(c).
+								PaddingX(6).
+								PaddingY(2).
+								Radius(4).
+								Background(theme.CanvasDeep).
+								Border(1, ac).
+								Children(func() {
+									ui.Text(c, label).
+										Font(theme.FontMono).
+										FontSize(theme.SizeShortcut).
+										TextColor(ac)
+								})
+						}
+					})
+			}
+		})
+}
+
+func metricPassColor(ok bool) ui.Color {
+	if ok {
+		return ui.RGB(0x34, 0xD3, 0x99)
+	}
+	return theme.RimDanger
+}
+
+func exportSuiteReport(state *models.AppState, report models.SuiteRunReport, format string) {
+	ext := "json"
+	defaultName := fmt.Sprintf("boomerang-suite-%s.json", report.RunID)
+	if format == "md" {
+		ext = "md"
+		defaultName = fmt.Sprintf("boomerang-suite-%s.md", report.RunID)
+	}
+
+	state.PickSaveFile("Export Suite Report", defaultName, []string{ext}, func(path string) {
+		if strings.TrimSpace(path) == "" {
+			return
+		}
+		var data []byte
+		if format == "md" {
+			data = []byte(runner.FormatReportMarkdown(report))
+		} else {
+			var err error
+			data, err = runner.FormatReportJSON(report)
+			if err != nil {
+				state.SetRunnerStatusMessage("Export failed: " + err.Error())
+				return
+			}
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			state.SetRunnerStatusMessage("Export failed: " + err.Error())
+			return
+		}
+		state.SetRunnerStatusMessage("Exported suite report to " + path)
+	})
 }
 
 func renderRunnerChip(c *ui.Context, label string, active bool, onClick func()) {
