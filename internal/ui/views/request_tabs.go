@@ -298,25 +298,7 @@ func renderBodyTab(c *ui.Context, state *models.AppState) {
 					})
 
 			case "json", "text":
-				ui.Column(c).
-					Height(160).
-					Background(theme.CanvasDeep).
-					Radius(6).
-					Padding(8).
-					Border(1, theme.BorderSubtle).
-					Children(func() {
-						ta := ui.TextArea(c, &bodyText).
-							Font(theme.FontMono).
-							FontSize(theme.SizeBase).
-							TextColor(theme.TextPrimary).
-							Grow(1)
-
-						if ta.Changed() {
-							state.Mutate(func(s *models.AppState) {
-								s.ActiveRequest.Body = bodyText
-							})
-						}
-					})
+				renderRequestBodyEditor(c, state, bodyType, bodyText)
 
 			case "form-data":
 				primitives.KVTable(c, primitives.KVTableProps{

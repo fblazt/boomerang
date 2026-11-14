@@ -2,7 +2,6 @@ package views
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/models"
@@ -50,7 +49,7 @@ func ResponseView(c *ui.Context, state *models.AppState) ui.Element {
 
 			renderResponseHeader(c, resp)
 			TelemetryWaterfallBar(c, resp.Telemetry)
-			renderResponseBody(c, resp.Body)
+			renderResponseBody(c, state, resp.Body)
 		})
 }
 
@@ -294,61 +293,8 @@ func legendItem(c *ui.Context, name string, ms int64, color ui.Color) {
 		})
 }
 
-func renderResponseBody(c *ui.Context, body string) {
-	if body == "" {
-		body = "{}"
-	}
-
-	lines := strings.Split(body, "\n")
-	if len(lines) > 200 {
-		lines = lines[:200] // prevent huge layout strain in simple viewer
-	}
-
-	ui.Scroll(c).
-		Grow(1).
-		Children(func() {
-			ui.Row(c).
-				Grow(1).
-				Background(theme.CanvasDeep).
-				Radius(6).
-				Padding(10).
-				Border(1, theme.BorderSubtle).
-				Children(func() {
-					// Line numbers column
-					ui.Column(c).
-						Width(32).
-						Children(func() {
-							for i := 1; i <= len(lines); i++ {
-								ui.Text(c, fmt.Sprintf("%d", i)).
-									Font(theme.FontMono).
-									FontSize(theme.SizeCaption).
-									TextColor(theme.TextDim)
-							}
-						})
-
-					ui.Box(c).Width(10)
-
-					// Content lines column
-					ui.Column(c).
-						Grow(1).
-						Children(func() {
-							for _, line := range lines {
-								col := theme.TextPrimary
-								trim := strings.TrimSpace(line)
-								if strings.HasPrefix(trim, "\"") && strings.Contains(trim, "\":") {
-									col = theme.RimFocus
-								} else if strings.HasPrefix(trim, "{") || strings.HasPrefix(trim, "}") || strings.HasPrefix(trim, "[") || strings.HasPrefix(trim, "]") {
-									col = theme.TextDim
-								}
-
-								ui.Text(c, line).
-									Font(theme.FontMono).
-									FontSize(theme.SizeCaption).
-									TextColor(col)
-							}
-						})
-				})
-		})
+func renderResponseBody(c *ui.Context, state *models.AppState, body string) {
+	renderResponseBodyEditor(c, state, body)
 }
 
 func formatBytes(b int64) string {

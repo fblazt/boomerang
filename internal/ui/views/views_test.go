@@ -2,8 +2,10 @@ package views
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -679,8 +681,79 @@ func TestRESTFlow_WithMockServer(t *testing.T) {
 	if !tt.HasText("TTFB") {
 		t.Fatal("expected telemetry waterfall breakdown")
 	}
-	if !tt.HasText("\"status\": \"ok\"") {
-		t.Fatal("expected response body content rendered in panel")
+	respEditorInfo, ok := tt.Access("Response Body Viewer")
+	if !ok {
+		t.Fatal("expected Response Body Viewer accessibility node")
+	}
+	if !strings.Contains(respEditorInfo.Value, "\"status\": \"ok\"") {
+		t.Fatalf("expected response body content in Response Body Viewer, got %q", respEditorInfo.Value)
+	}
+}
+
+func TestCodeEditor_RequestBodyAndLargeResponse(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ActiveTab = "body"
+	state.ActiveRequest.BodyType = "json"
+	state.ActiveRequest.Body = ""
+
+	// Build a 250-line JSON response to verify no 200-line truncation occurs
+	var b strings.Builder
+	b.WriteString("{\n  \"items\": [\n")
+	for i := 1; i <= 250; i++ {
+		if i > 1 {
+			b.WriteString(",\n")
+		}
+		b.WriteString(fmt.Sprintf("    {\"id\": %d}", i))
+	}
+	b.WriteString("\n  ]\n}")
+	largeBody := b.String()
+
+	state.ActiveResponse = &models.ResponseModel{
+		StatusCode: 200,
+		StatusText: "200 OK",
+		Proto:      "HTTP/2.0",
+		Body:       largeBody,
+	}
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Row(c).Fill().Gap(12).Children(func() {
+			ui.Column(c).Width(500).Children(func() {
+				RequestTabsView(c, state)
+			})
+			ui.Column(c).Grow(1).Children(func() {
+				ResponseView(c, state)
+			})
+		})
+	}, 1200, 700)
+	tt.Frame()
+
+	// Verify >200 lines are preserved inside virtualized Response Body Viewer
+	respInfo, ok := tt.Access("Response Body Viewer")
+	if !ok {
+		t.Fatal("expected Response Body Viewer node")
+	}
+	if !strings.Contains(respInfo.Value, "\"id\": 250") {
+		t.Fatalf("expected line 250 preserved without 200-line truncation, value len=%d", len(respInfo.Value))
+	}
+	if !respInfo.ReadOnly {
+		t.Fatal("expected Response Body Viewer to be ReadOnly")
+	}
+
+	// Edit Request Body Editor interactively and verify AppState syncs
+	reqInfo, ok := tt.Access("Request Body Editor")
+	if !ok {
+		t.Fatal("expected Request Body Editor node")
+	}
+	if reqInfo.Bounds.W <= 0 || reqInfo.Bounds.H <= 0 {
+		t.Fatalf("expected non-zero Request Body Editor bounds, got %+v", reqInfo.Bounds)
+	}
+	tt.ClickAt(reqInfo.Bounds.X+20, reqInfo.Bounds.Y+20)
+	tt.Frame()
+	tt.Type("{\"hello\":\"world\"}")
+	tt.Frame()
+
+	if !strings.Contains(state.ActiveRequest.Body, "hello") {
+		t.Fatalf("expected request body updated from Request Body Editor, got %q", state.ActiveRequest.Body)
 	}
 }
 
