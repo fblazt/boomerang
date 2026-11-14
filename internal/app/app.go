@@ -102,6 +102,7 @@ func NewApp(opts Options) *App {
 	st.SetStreamController(realtime.NewManager())
 	st.SetGraphQLRunner(graphql.NewClient(nil))
 	st.SetTestEvaluator(runner.EvaluateAssertions)
+	st.SetSuiteRunner(runner.NewPoolRunner(enginehttp.NewClient(30*time.Second), env.InterpolateRequest, runner.EvaluateAssertions))
 
 	app := &App{
 		opts:  opts,

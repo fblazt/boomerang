@@ -171,22 +171,25 @@ func SidebarView(c *ui.Context, state *models.AppState) ui.Element {
 						primitives.ShortcutCap(c, "⌘H")
 					})
 
-					ui.Row(c).
+					runRow := ui.Row(c).
 						Height(28).
 						PaddingX(8).
 						Radius(4).
 						AlignItems(ui.Center).
 						Gap(8).
-						Focusable().
-						Children(func() {
-							ui.Text(c, "▶").Font(theme.FontSans).FontSize(theme.SizeBase)
-							ui.Text(c, "Suite Runner").
-								Font(theme.FontSans).
-								FontSize(theme.SizeBase).
-								TextColor(theme.TextSecondary)
-							ui.Box(c).Grow(1)
-							primitives.ShortcutCap(c, "⌘R")
-						})
+						Focusable()
+					if runRow.Clicked() {
+						state.OpenRunnerModal()
+					}
+					runRow.Children(func() {
+						ui.Text(c, "▶").Font(theme.FontSans).FontSize(theme.SizeBase)
+						ui.Text(c, "Suite Runner").
+							Font(theme.FontSans).
+							FontSize(theme.SizeBase).
+							TextColor(theme.TextSecondary)
+						ui.Box(c).Grow(1)
+						primitives.ShortcutCap(c, "⌘R")
+					})
 
 					colCount, _ := state.CollectionCounts()
 					ui.Row(c).

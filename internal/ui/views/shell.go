@@ -64,5 +64,8 @@ func ShellView(c *ui.Context, state *models.AppState) ui.Element {
 
 			// Execution History & HAR Timeline Modal Overlay
 			modals.HistoryModalHost(c, state)
+
+			// Collection Suite Runner Modal Overlay
+			modals.RunnerModalHost(c, state)
 		})
 }

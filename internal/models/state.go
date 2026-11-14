@@ -168,6 +168,19 @@ type AppState struct {
 	interpolateStrFn func(template string, vars map[string]string) string
 	testEvalFn       func(script string, req RequestModel, resp *ResponseModel) []TestAssertionResult
 
+	// Collection Suite Runner State
+	suiteRunner         SuiteRunner
+	runnerCancel        context.CancelFunc
+	ShowRunnerModal     bool
+	RunnerCollectionID  string
+	RunnerConcurrency   int
+	RunnerStopOnError   bool
+	RunnerRunning       bool
+	RunnerProgress      SuiteRunProgress
+	RunnerReport        *SuiteRunReport
+	RunnerFilter        string // "all", "passed", "failed"
+	RunnerStatusMessage string
+
 	// History Timeline Modal State
 	ShowHistoryModal     bool
 	HistoryEntries       []HistoryEntry
@@ -199,7 +212,9 @@ func NewAppState(redrawFn func()) *AppState {
 			BodyType: "json",
 			AuthType: "none",
 		},
-		ActiveEnv:       "PROD",
+		ActiveEnv:         "PROD",
+		RunnerConcurrency: 4,
+		RunnerFilter:      "all",
 		ActiveVaultEnv:  "PROD",
 		VaultModalTab:   "variables",
 		RevealedSecrets: make(map[string]bool),
