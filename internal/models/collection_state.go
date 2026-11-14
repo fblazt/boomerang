@@ -44,6 +44,7 @@ func (s *AppState) SelectCollectionItem(collectionID, itemID string) bool {
 	s.ActiveCollectionID = collectionID
 	s.ActiveItemID = found.ID
 	s.ActiveDraftID = ""
+	s.WorkspaceMode = "rest"
 	s.ActiveRequest = CloneRequestModel(found.Request)
 	s.mu.Unlock()
 
@@ -214,6 +215,7 @@ func (s *AppState) CreateRequestInCollection(collectionID, folderID, name string
 	s.ActiveCollectionID = collectionID
 	s.ActiveItemID = item.ID
 	s.ActiveDraftID = ""
+	s.WorkspaceMode = "rest"
 	s.ActiveRequest = CloneRequestModel(item.Request)
 	s.mu.Unlock()
 

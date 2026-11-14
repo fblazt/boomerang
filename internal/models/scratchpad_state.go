@@ -60,6 +60,7 @@ func (s *AppState) NewScratchpadDraft() ScratchpadDraft {
 	s.ActiveCollectionID = ""
 	s.ActiveItemID = ""
 	s.ActiveDraftID = draft.ID
+	s.WorkspaceMode = "rest"
 	s.ActiveRequest = CloneRequestModel(draft.Request)
 	s.Drafts = append(s.Drafts, draft)
 	s.mu.Unlock()
@@ -95,6 +96,7 @@ func (s *AppState) SelectDraft(draftID string) bool {
 	s.ActiveCollectionID = ""
 	s.ActiveItemID = ""
 	s.ActiveDraftID = found.ID
+	s.WorkspaceMode = "rest"
 	s.ActiveRequest = CloneRequestModel(found.Request)
 	s.mu.Unlock()
 

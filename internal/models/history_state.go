@@ -114,6 +114,7 @@ func (s *AppState) SelectAndReplayHistory(id string) bool {
 	s.ActiveCollectionID = ""
 	s.ActiveItemID = ""
 	s.ActiveDraftID = ""
+	s.WorkspaceMode = "rest"
 	s.ActiveRequest = CloneRequestModel(found.Request)
 	if found.Response != nil {
 		respCopy := *found.Response

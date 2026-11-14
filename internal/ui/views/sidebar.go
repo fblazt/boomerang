@@ -596,21 +596,29 @@ func renderRowActionPill(c *ui.Context, label, tooltip string, onClick func()) {
 }
 
 func renderStreamItem(c *ui.Context, state *models.AppState, name, proto, url string) {
+	var isSelected bool
+	state.View(func(s *models.AppState) {
+		isSelected = s.WorkspaceMode == "stream" && s.Stream.URL == url
+	})
+	bg := theme.SurfaceSubPlane
+	if isSelected {
+		bg = theme.SurfaceActive
+	}
+
 	row := ui.Row(c).
 		Height(28).
 		PaddingX(8).
 		Radius(5).
-		Background(theme.SurfaceSubPlane).
+		Background(bg).
 		AlignItems(ui.Center).
 		Gap(8).
 		Focusable()
 
+	if isSelected {
+		row.Border(1, theme.BorderMedium)
+	}
 	if row.Clicked() {
-		state.Mutate(func(s *models.AppState) {
-			s.ActiveRequest.Name = name
-			s.ActiveRequest.Method = proto
-			s.ActiveRequest.URL = url
-		})
+		state.OpenStreamEndpoint(models.StreamProtocol(proto), name, url)
 	}
 
 	row.Children(func() {

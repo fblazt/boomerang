@@ -107,7 +107,13 @@ func StatusBarView(c *ui.Context, state *models.AppState) ui.Element {
 
 					ui.Box(c).Width(1).Height(10).Background(theme.BorderSubtle)
 
-					// Gateway Ping
+					// Gateway / Stream Ping
+					var pingLabel = "14ms"
+					state.View(func(s *models.AppState) {
+						if s.Stream.Status == models.StreamConnected && s.Stream.PingRTTMs > 0 {
+							pingLabel = fmt.Sprintf("%dms", s.Stream.PingRTTMs)
+						}
+					})
 					ui.Row(c).
 						Gap(4).
 						AlignItems(ui.Center).
@@ -116,7 +122,7 @@ func StatusBarView(c *ui.Context, state *models.AppState) ui.Element {
 								Font(theme.FontMono).
 								FontSize(theme.SizeShortcut).
 								TextColor(theme.TextDim)
-							ui.Text(c, "14ms").
+							ui.Text(c, pingLabel).
 								Font(theme.FontMono).
 								FontSize(theme.SizeShortcut).
 								TextColor(theme.TextSecondary)

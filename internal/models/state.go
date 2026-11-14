@@ -41,6 +41,15 @@ type FilePickerFunc func(title string, extensions []string, onPicked func(path s
 // SaveFilePickerFunc opens a save-file dialog and invokes onPicked with the selected path if confirmed.
 type SaveFilePickerFunc func(title, defaultName string, extensions []string, onPicked func(path string))
 
+// StreamController defines lifecycle and frame messaging for WebSocket and SSE streams.
+type StreamController interface {
+	Connect(ctx context.Context, proto StreamProtocol, targetURL string, headers map[string]string, onFrame func(StreamFrame), onStatus func(StreamStatus, int64, error)) error
+	Disconnect() error
+	SendText(payload string) error
+	SendBinary(data []byte) error
+	SendPing() error
+}
+
 // HistoryStore defines persistence operations for executed request history logs.
 type HistoryStore interface {
 	RecordHistory(entry HistoryEntry) (HistoryEntry, error)
@@ -91,6 +100,13 @@ type AppState struct {
 	historyStore    HistoryStore
 	draftStore      DraftStore
 	collectionStore CollectionStore
+	streamCtrl      StreamController
+
+	// Realtime Stream Inspector State
+	WorkspaceMode         string // "rest", "stream", "graphql"
+	Stream                StreamSession
+	StreamFrames          []StreamFrame
+	StreamFilterDirection string // "", "SENT", "RECV", "PING"
 
 	// Scratchpad Drafts State
 	Drafts        []ScratchpadDraft
@@ -169,8 +185,16 @@ func NewAppState(redrawFn func()) *AppState {
 		Environments:    DefaultEnvironments(),
 		Collections:     DefaultCollections(),
 		CollapsedNodes:  make(map[string]bool),
-		ActiveTab:       "params",
-		SidebarOpen:     true,
+		ActiveTab:     "params",
+		SidebarOpen:   true,
+		WorkspaceMode: "rest",
+		Stream: StreamSession{
+			Protocol:     StreamProtocolWSS,
+			URL:          "wss://stream.internal.net/orders",
+			Status:       StreamDisconnected,
+			ComposerType: string(OpcodeText),
+			ComposerBody: "{\n  \"action\": \"subscribe\",\n  \"channel\": \"orders.v2\"\n}",
+		},
 	}
 }
 

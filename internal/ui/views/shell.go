@@ -7,11 +7,16 @@ import (
 	"github.com/fblazt/boomerang/internal/ui/theme"
 )
 
-// MainWorkspaceView coordinates the center stage of the application shell:
-// URL Bar with method selector and Send/Cancel controls,
-// Request Configuration Tabs (Params, Headers, Body, Auth, Settings),
-// and Response Inspection Panel with Telemetry Waterfall.
+// MainWorkspaceView coordinates the center stage of the application shell based on WorkspaceMode.
 func MainWorkspaceView(c *ui.Context, state *models.AppState) ui.Element {
+	var mode string
+	state.View(func(s *models.AppState) {
+		mode = s.WorkspaceMode
+	})
+	if mode == "stream" {
+		return RealtimeView(c, state)
+	}
+
 	return ui.Column(c).
 		Grow(1).
 		Padding(16).

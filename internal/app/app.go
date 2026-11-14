@@ -10,6 +10,7 @@ import (
 	"github.com/fblazt/boomerang/internal/engine/collection"
 	"github.com/fblazt/boomerang/internal/engine/env"
 	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
+	"github.com/fblazt/boomerang/internal/engine/realtime"
 	"github.com/fblazt/boomerang/internal/engine/storage"
 	"github.com/fblazt/boomerang/internal/models"
 	"github.com/fblazt/boomerang/internal/ui/catalog"
@@ -96,6 +97,7 @@ func NewApp(opts Options) *App {
 
 	eng := env.NewEngine(vault, models.DefaultEnvironments())
 	st.SetEnvEngine(eng)
+	st.SetStreamController(realtime.NewManager())
 
 	app := &App{
 		opts:  opts,
@@ -155,8 +157,11 @@ func (a *App) State() *AppState {
 	return a.state
 }
 
-// Close releases persisted application resources such as the SQLite store.
+// Close releases persisted application resources and shuts down active connections.
 func (a *App) Close() error {
+	if a.state != nil {
+		a.state.DisconnectStream()
+	}
 	if a.db != nil {
 		return a.db.Close()
 	}
