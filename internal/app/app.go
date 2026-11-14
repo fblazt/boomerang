@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/engine/collection"
 	"github.com/fblazt/boomerang/internal/engine/env"
+	"github.com/fblazt/boomerang/internal/engine/graphql"
 	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
 	"github.com/fblazt/boomerang/internal/engine/realtime"
 	"github.com/fblazt/boomerang/internal/engine/storage"
@@ -98,6 +99,7 @@ func NewApp(opts Options) *App {
 	eng := env.NewEngine(vault, models.DefaultEnvironments())
 	st.SetEnvEngine(eng)
 	st.SetStreamController(realtime.NewManager())
+	st.SetGraphQLRunner(graphql.NewClient(nil))
 
 	app := &App{
 		opts:  opts,

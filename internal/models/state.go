@@ -50,6 +50,12 @@ type StreamController interface {
 	SendPing() error
 }
 
+// GraphQLRunner defines schema introspection and GraphQL document execution.
+type GraphQLRunner interface {
+	Introspect(ctx context.Context, endpoint string, headers map[string]string) (*GraphQLSchema, error)
+	ExecuteQuery(ctx context.Context, req GraphQLRequest) (*GraphQLResponse, error)
+}
+
 // HistoryStore defines persistence operations for executed request history logs.
 type HistoryStore interface {
 	RecordHistory(entry HistoryEntry) (HistoryEntry, error)
@@ -96,11 +102,24 @@ type AppState struct {
 	executor RequestExecutor
 	cancelFn context.CancelFunc
 
-	// History, Drafts & Collections persistence
+	// History, Drafts, Collections, Realtime & GraphQL persistence/engines
 	historyStore    HistoryStore
 	draftStore      DraftStore
 	collectionStore CollectionStore
 	streamCtrl      StreamController
+	graphqlRunner   GraphQLRunner
+
+	// GraphQL Explorer State
+	GQLRequest           GraphQLRequest
+	GQLSchema            *GraphQLSchema
+	GQLSelectedType      string
+	GQLSchemaSearch      string
+	GQLSchemaDrawerOpen  bool
+	GQLIntrospecting     bool
+	GQLLoading           bool
+	GQLResponse          *GraphQLResponse
+	GQLError             string
+	GQLAutocompleteItems []string
 
 	// Realtime Stream Inspector State
 	WorkspaceMode         string // "rest", "stream", "graphql"
@@ -194,6 +213,12 @@ func NewAppState(redrawFn func()) *AppState {
 			Status:       StreamDisconnected,
 			ComposerType: string(OpcodeText),
 			ComposerBody: "{\n  \"action\": \"subscribe\",\n  \"channel\": \"orders.v2\"\n}",
+		},
+		GQLSchemaDrawerOpen: true,
+		GQLRequest: GraphQLRequest{
+			Endpoint:      "{{base_url}}/graphql",
+			Query:         "query GetUsers($limit: Int = 10) {\n  users(limit: $limit) {\n    id\n    email\n  }\n}",
+			VariablesJSON: "{\n  \"limit\": 10\n}",
 		},
 	}
 }
