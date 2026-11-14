@@ -34,12 +34,16 @@ type EnvironmentManager interface {
 	ImportEnvironment(name string, dotEnvContent string) (*Environment, error)
 }
 
+// FilePickerFunc opens a file selector and invokes onPicked with the selected path if confirmed.
+type FilePickerFunc func(title string, extensions []string, onPicked func(path string))
+
 // AppState holds the thread-safe global reactive state of the Boomerang application.
 type AppState struct {
 	mu sync.RWMutex
 
 	// UI Redraw trigger callback (e.g. services.Invalidate or test hook)
-	redrawFn func()
+	redrawFn   func()
+	filePicker FilePickerFunc
 
 	// HTTP Client Executor
 	executor RequestExecutor
@@ -105,6 +109,23 @@ func (s *AppState) SetRedrawFunc(fn func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.redrawFn = fn
+}
+
+// SetFilePicker attaches a file selection handler (e.g., native OS dialog or test stub).
+func (s *AppState) SetFilePicker(fn FilePickerFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.filePicker = fn
+}
+
+// PickFile triggers the configured file picker if available.
+func (s *AppState) PickFile(title string, extensions []string, onPicked func(path string)) {
+	s.mu.RLock()
+	fp := s.filePicker
+	s.mu.RUnlock()
+	if fp != nil && onPicked != nil {
+		fp(title, extensions, onPicked)
+	}
 }
 
 // SetExecutor configures the HTTP request execution engine.
@@ -735,6 +756,16 @@ func (s *AppState) SendRequest() {
 	if s.interpolateFn != nil {
 		activeVars := s.getActiveVariablesLocked()
 		reqCopy = s.interpolateFn(reqCopy, activeVars)
+	}
+
+	if reqCopy.TransportPolicy == nil {
+		for _, env := range s.Environments {
+			if env.Name == s.ActiveEnv {
+				policyCopy := env.TransportPolicy
+				reqCopy.TransportPolicy = &policyCopy
+				break
+			}
+		}
 	}
 	s.mu.Unlock()
 

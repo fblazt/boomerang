@@ -220,3 +220,78 @@ func TestVaultManagerModal_WithEngine(t *testing.T) {
 		t.Fatal("expected decrypted secret from vault to be displayed")
 	}
 }
+
+func TestVaultManagerModal_TransportPolicyCertPickers(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ActiveVaultEnv = "PROD"
+	state.ShowVaultModal = true
+
+	var pickedTitles []string
+	state.SetFilePicker(func(title string, extensions []string, onPicked func(path string)) {
+		pickedTitles = append(pickedTitles, title)
+		if strings.Contains(title, "Root CA") {
+			onPicked("/tmp/certs/corp-root-ca.pem")
+			return
+		}
+		if strings.Contains(title, "Client Certificate") {
+			onPicked("/tmp/certs/service-client.pem")
+			return
+		}
+		onPicked("/tmp/certs/service-client.key")
+	})
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		VaultManagerModal(c, state)
+	}, 960, 720)
+	tt.Frame()
+
+	if err := tt.Click("Transport Policy"); err != nil {
+		t.Fatalf("failed to click Transport Policy tab: %v", err)
+	}
+	tt.Frame()
+
+	if err := tt.Click("Select Root CA certificate (click to browse PEM/CRT)"); err != nil {
+		t.Fatalf("failed to click Pinned Root CA picker: %v", err)
+	}
+	tt.Frame()
+
+	if !tt.HasText("corp-root-ca.pem") {
+		t.Fatal("expected selected Root CA filename to render")
+	}
+
+	if err := tt.Click("No client certificate configured (click to select PEM/P12)"); err != nil {
+		t.Fatalf("failed to click mTLS client cert picker: %v", err)
+	}
+	tt.Frame()
+
+	if !tt.HasText("service-client.pem") || !tt.HasText("mTLS ENFORCED") {
+		t.Fatal("expected mTLS certificate filename and mTLS ENFORCED badge")
+	}
+
+	if err := tt.Click("Optional separate private key (click to browse KEY/PEM)"); err != nil {
+		t.Fatalf("failed to click mTLS private key picker: %v", err)
+	}
+	tt.Frame()
+
+	if !tt.HasText("service-client.key") {
+		t.Fatal("expected selected private key filename to render")
+	}
+
+	if len(pickedTitles) != 3 {
+		t.Fatalf("expected 3 file picker calls, got %d (%v)", len(pickedTitles), pickedTitles)
+	}
+
+	// Clear buttons should clear configured paths
+	if err := tt.Click("Clear"); err != nil {
+		t.Fatalf("failed to click Clear: %v", err)
+	}
+	tt.Frame()
+
+	state.View(func(s *models.AppState) {
+		for _, e := range s.Environments {
+			if e.Name == "PROD" && e.TransportPolicy.PinnedRootCA != "" {
+				t.Fatalf("expected PinnedRootCA cleared, got %q", e.TransportPolicy.PinnedRootCA)
+			}
+		}
+	})
+}

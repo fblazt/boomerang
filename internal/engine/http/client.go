@@ -19,7 +19,9 @@ import (
 
 // Client executes HTTP requests and collects telemetry metrics.
 type Client struct {
-	httpClient *http.Client
+	httpClient         *http.Client
+	timeout            time.Duration
+	hasCustomTransport bool
 }
 
 // NewClient returns a new configured HTTP Client with default transport.
@@ -42,6 +44,7 @@ func NewClient(timeout time.Duration) *Client {
 			Transport: transport,
 			Timeout:   timeout,
 		},
+		timeout: timeout,
 	}
 }
 
@@ -55,6 +58,8 @@ func NewClientWithTransport(transport http.RoundTripper, timeout time.Duration) 
 			Transport: transport,
 			Timeout:   timeout,
 		},
+		timeout:            timeout,
+		hasCustomTransport: true,
 	}
 }
 
@@ -196,7 +201,24 @@ func (c *Client) Execute(ctx context.Context, req models.RequestModel) (*models.
 	tracedCtx := WithTrace(httpReq.Context(), traceCollector)
 	httpReq = httpReq.WithContext(tracedCtx)
 
-	resp, err := c.httpClient.Do(httpReq)
+	httpClient := c.httpClient
+	if !c.hasCustomTransport && req.TransportPolicy != nil {
+		tr, cleanup, err := BuildTransport(req.TransportPolicy)
+		if err != nil {
+			return &models.ResponseModel{
+				Error: err.Error(),
+			}, err
+		}
+		if cleanup != nil {
+			defer cleanup()
+		}
+		httpClient = &http.Client{
+			Transport: tr,
+			Timeout:   c.timeout,
+		}
+	}
+
+	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		traceCollector.MarkBodyDone()
 		telemetry := traceCollector.Telemetry()

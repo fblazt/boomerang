@@ -2,10 +2,12 @@ package modals
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/fblazt/boomerang/internal/engine/env"
+	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
 	"github.com/fblazt/boomerang/internal/models"
 	"github.com/fblazt/boomerang/internal/ui/primitives"
 	"github.com/fblazt/boomerang/internal/ui/theme"
@@ -834,11 +836,33 @@ func renderTransportPolicyTab(c *ui.Context, state *models.AppState, target mode
 			ui.Column(c).
 				Gap(6).
 				Children(func() {
-					ui.Text(c, "SSL & CERTIFICATE VERIFICATION").
-						Font(theme.FontMono).
-						FontSize(9).
-						Bold().
-						TextColor(theme.TextDim)
+					ui.Row(c).
+						AlignItems(ui.Center).
+						Gap(8).
+						Children(func() {
+							ui.Text(c, "SSL & CERTIFICATE VERIFICATION").
+								Font(theme.FontMono).
+								FontSize(9).
+								Bold().
+								TextColor(theme.TextDim)
+
+							if policy.ClientCertPEM != "" {
+								ui.Row(c).
+									Height(18).
+									PaddingX(6).
+									Radius(3).
+									Background(ui.RGB(0x0E, 0x26, 0x20)).
+									Border(1, ui.RGB(0x1E, 0x52, 0x43)).
+									AlignItems(ui.Center).
+									Children(func() {
+										ui.Text(c, "mTLS ENFORCED").
+											Font(theme.FontMono).
+											FontSize(8).
+											Bold().
+											TextColor(ui.RGB(0x34, 0xD3, 0x99))
+									})
+							}
+						})
 
 					sslToggle := ui.Row(c).
 						Height(28).
@@ -877,33 +901,183 @@ func renderTransportPolicyTab(c *ui.Context, state *models.AppState, target mode
 					})
 				})
 
-			// mTLS Client Identity
-			ui.Column(c).
-				Gap(6).
-				Children(func() {
-					ui.Text(c, "mTLS CLIENT IDENTITY (PEM / PKCS#12)").
-						Font(theme.FontMono).
-						FontSize(9).
-						Bold().
-						TextColor(theme.TextDim)
+			// Pinned Root CA Certificate
+			caBadge := ""
+			caBadgeColor := ui.RGB(0x34, 0xD3, 0x99)
+			if policy.PinnedRootCA != "" {
+				if summary, err := enginehttp.InspectRootCA(policy.PinnedRootCA); err == nil {
+					caBadge = summary
+				} else {
+					caBadge = "INVALID PEM"
+					caBadgeColor = theme.RimDanger
+				}
+			}
+			renderCertPickerRow(
+				c,
+				"PINNED ROOT CA (.PEM / .CRT)",
+				policy.PinnedRootCA,
+				"Select Root CA certificate (click to browse PEM/CRT)",
+				caBadge,
+				caBadgeColor,
+				func() {
+					state.PickFile("Select Pinned Root CA", []string{"pem", "crt", "cer"}, func(path string) {
+						updated := policy
+						updated.PinnedRootCA = path
+						state.UpdateTransportPolicy(target.Name, updated)
+					})
+				},
+				func() {
+					updated := policy
+					updated.PinnedRootCA = ""
+					state.UpdateTransportPolicy(target.Name, updated)
+				},
+			)
 
-					ui.Row(c).
+			// mTLS Client Identity
+			renderCertPickerRow(
+				c,
+				"mTLS CLIENT IDENTITY (.PEM / .P12)",
+				policy.ClientCertPEM,
+				"No client certificate configured (click to select PEM/P12)",
+				"",
+				theme.TextDim,
+				func() {
+					state.PickFile("Select mTLS Client Certificate", []string{"pem", "crt", "p12", "pfx"}, func(path string) {
+						updated := policy
+						updated.ClientCertPEM = path
+						ext := strings.ToLower(filepath.Ext(path))
+						if ext == ".p12" || ext == ".pfx" {
+							updated.ClientKeyPEM = ""
+						}
+						state.UpdateTransportPolicy(target.Name, updated)
+					})
+				},
+				func() {
+					updated := policy
+					updated.ClientCertPEM = ""
+					updated.ClientKeyPEM = ""
+					state.UpdateTransportPolicy(target.Name, updated)
+				},
+			)
+
+			// Optional separate mTLS Private Key for non-PKCS12 PEM certificates
+			certExt := strings.ToLower(filepath.Ext(policy.ClientCertPEM))
+			if policy.ClientCertPEM != "" && certExt != ".p12" && certExt != ".pfx" {
+				renderCertPickerRow(
+					c,
+					"mTLS CLIENT PRIVATE KEY (.KEY / .PEM)",
+					policy.ClientKeyPEM,
+					"Optional separate private key (click to browse KEY/PEM)",
+					"",
+					theme.TextDim,
+					func() {
+						state.PickFile("Select mTLS Private Key", []string{"key", "pem"}, func(path string) {
+							updated := policy
+							updated.ClientKeyPEM = path
+							state.UpdateTransportPolicy(target.Name, updated)
+						})
+					},
+					func() {
+						updated := policy
+						updated.ClientKeyPEM = ""
+						state.UpdateTransportPolicy(target.Name, updated)
+					},
+				)
+			}
+		})
+}
+
+func renderCertPickerRow(
+	c *ui.Context,
+	heading string,
+	selectedPath string,
+	placeholder string,
+	badge string,
+	badgeColor ui.Color,
+	onPick func(),
+	onClear func(),
+) {
+	ui.Column(c).
+		Gap(6).
+		Children(func() {
+			ui.Text(c, heading).
+				Font(theme.FontMono).
+				FontSize(9).
+				Bold().
+				TextColor(theme.TextDim)
+
+			ui.Row(c).
+				Gap(6).
+				AlignItems(ui.Center).
+				Children(func() {
+					pickBtn := ui.Row(c).
+						Grow(1).
 						Height(32).
 						PaddingX(10).
 						Radius(5).
 						Background(theme.SurfaceCardTop).
 						Border(1, theme.BorderSubtle).
 						AlignItems(ui.Center).
-						Children(func() {
-							certPath := policy.ClientCertPEM
-							if certPath == "" {
-								certPath = "No client certificate configured (click to select PEM/P12)"
-							}
-							ui.Text(c, certPath).
-								Font(theme.FontMono).
+						Gap(8).
+						Focusable()
+
+					if pickBtn.Clicked() && onPick != nil {
+						onPick()
+					}
+
+					pickBtn.Children(func() {
+						displayText := placeholder
+						textColor := theme.TextMuted
+						if selectedPath != "" {
+							displayText = filepath.Base(selectedPath)
+							textColor = theme.TextPrimary
+						}
+						ui.Text(c, displayText).
+							Font(theme.FontMono).
+							FontSize(theme.SizeBadge).
+							TextColor(textColor)
+
+						ui.Spacer(c)
+
+						if badge != "" {
+							ui.Row(c).
+								Height(18).
+								PaddingX(6).
+								Radius(3).
+								Background(theme.SurfaceSubPlane).
+								Border(1, theme.BorderSubtle).
+								AlignItems(ui.Center).
+								Children(func() {
+									ui.Text(c, badge).
+										Font(theme.FontMono).
+										FontSize(8).
+										Bold().
+										TextColor(badgeColor)
+								})
+						}
+					})
+
+					if selectedPath != "" {
+						clearBtn := ui.Row(c).
+							Height(32).
+							PaddingX(10).
+							Radius(5).
+							Background(theme.SurfaceCardTop).
+							Border(1, theme.BorderSubtle).
+							AlignItems(ui.Center).
+							Focusable()
+
+						if clearBtn.Clicked() && onClear != nil {
+							onClear()
+						}
+
+						clearBtn.Children(func() {
+							ui.Text(c, "Clear").
+								Font(theme.FontSans).
 								FontSize(theme.SizeBadge).
 								TextColor(theme.TextMuted)
 						})
+					}
 				})
 		})
 }

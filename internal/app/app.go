@@ -63,10 +63,33 @@ func NewApp(opts Options) *App {
 	eng := env.NewEngine(vault, models.DefaultEnvironments())
 	st.SetEnvEngine(eng)
 
-	return &App{
+	app := &App{
 		opts:  opts,
 		state: st,
 	}
+
+	st.SetFilePicker(func(title string, extensions []string, onPicked func(path string)) {
+		go func() {
+			var filters []mygo.FileFilter
+			if len(extensions) > 0 {
+				filters = []mygo.FileFilter{{
+					Name:       "Certificates",
+					Extensions: extensions,
+				}}
+			}
+			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+				Parent:  app.win,
+				Title:   title,
+				Filters: filters,
+			})
+			if err != nil || len(paths) == 0 {
+				return
+			}
+			onPicked(paths[0])
+		}()
+	})
+
+	return app
 }
 
 // State returns the application's thread-safe state.

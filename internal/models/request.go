@@ -41,9 +41,10 @@ type RequestModel struct {
 	Token         string         `json:"token,omitempty"`
 	BasicUser     string         `json:"basic_user,omitempty"`
 	BasicPassword string         `json:"basic_password,omitempty"`
-	APIKeyKey     string         `json:"apikey_key,omitempty"`
-	APIKeyValue   string         `json:"apikey_value,omitempty"`
-	APIKeyIn      string         `json:"apikey_in,omitempty"` // header, query
+	APIKeyKey       string           `json:"apikey_key,omitempty"`
+	APIKeyValue     string           `json:"apikey_value,omitempty"`
+	APIKeyIn        string           `json:"apikey_in,omitempty"` // header, query
+	TransportPolicy *TransportPolicy `json:"transport_policy,omitempty"`
 }
 
 // ResponseModel represents the execution response.
