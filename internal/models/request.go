@@ -53,6 +53,7 @@ type RequestModel struct {
 	FollowRedirects *bool            `json:"follow_redirects,omitempty"`
 	EnableHTTP2     *bool            `json:"enable_http2,omitempty"`
 	TransportPolicy *TransportPolicy `json:"transport_policy,omitempty"`
+	TestScript      string           `json:"test_script,omitempty"`
 }
 
 // EffectiveFollowRedirects returns whether HTTP 3xx redirects should be followed (defaults to true).
@@ -97,8 +98,9 @@ type ResponseModel struct {
 	Proto      string            `json:"proto"`
 	Headers    map[string]string `json:"headers"`
 	Body       string            `json:"body"`
-	Telemetry  Telemetry         `json:"telemetry"`
-	Error      string            `json:"error,omitempty"`
+	Telemetry  Telemetry             `json:"telemetry"`
+	Assertions []TestAssertionResult `json:"assertions,omitempty"`
+	Error      string                `json:"error,omitempty"`
 }
 
 // SyncParamsToURL rebuilds the rawURL's query string using the provided params slice.
