@@ -125,6 +125,42 @@ func TestRealtimeView_ConnectionBarFromSidebar(t *testing.T) {
 		t.Fatal("expected CONNECTED, Ping: 14 ms, and Disconnect button")
 	}
 
+	// Push outbound frame via Frame Composer & Push Frame button
+	state.SetStreamComposerBody(`{"subscribe":"trades"}`)
+	tt.Frame()
+	if err := tt.Click("↑ Push Frame"); err != nil {
+		t.Fatalf("click Push Frame: %v", err)
+	}
+	tt.Frame()
+
+	for _, want := range []string{"↑ SENT", "↓ RECV", "Text 1", `{"subscribe":"trades"}`, `{"ack":true}`} {
+		if !tt.HasText(want) {
+			t.Fatalf("expected %q in live direction timeline", want)
+		}
+	}
+
+	// Filter timeline to SENT only
+	if err := tt.Click("SENT"); err != nil {
+		t.Fatalf("click SENT filter: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText(`{"ack":true}`) {
+		t.Fatal("expected RECV frame hidden when SENT filter active")
+	}
+
+	// Clear filter, send manual Ping, and check PONG direction badge
+	if err := tt.Click("SENT"); err != nil {
+		t.Fatalf("toggle SENT filter off: %v", err)
+	}
+	tt.Frame()
+	if err := tt.Click("Send Ping"); err != nil {
+		t.Fatalf("click Send Ping: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("↕ PONG") || !tt.HasText("Pong 10") {
+		t.Fatal("expected ↕ PONG and Pong 10 in timeline after Send Ping")
+	}
+
 	// Disconnect
 	if err := tt.Click("Disconnect"); err != nil {
 		t.Fatalf("click Disconnect: %v", err)
