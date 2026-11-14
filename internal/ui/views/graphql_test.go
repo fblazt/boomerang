@@ -2,6 +2,7 @@ package views
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,5 +125,85 @@ func TestGraphQLView_SchemaDrawerNavigation(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText("UTF-8 character sequence") {
 		t.Fatal("expected scalar String documentation displayed")
+	}
+}
+
+func TestGraphQLView_SplitQueryVariablesAndAutocomplete(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.SetGraphQLRunner(fakeGraphQLRunner{})
+	state.OpenGraphQLExplorer("https://api.example.com/graphql")
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(theme.NewBoomerangTheme())
+		ShellView(c, state)
+	}, 1280, 820)
+	tt.Frame()
+
+	// Introspect schema so autocomplete suggestions populate
+	if err := tt.Click("Introspect"); err != nil {
+		t.Fatalf("click Introspect: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var hasSchema bool
+		state.View(func(s *models.AppState) {
+			hasSchema = s.GQLSchema != nil
+		})
+		if hasSchema {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	tt.Frame()
+
+	for _, want := range []string{"QUERY DOCUMENT", "QUERY VARIABLES (JSON)", "SUGGESTIONS"} {
+		if !tt.HasText(want) {
+			t.Fatalf("expected %q in split query/variables workspace", want)
+		}
+	}
+
+	// Simulate user typing a partial field prefix in Query Document
+	state.SetGraphQLQuery("query {\n  us\n}")
+	tt.Frame()
+
+	qNode, ok := tt.Access("GraphQL Query Editor")
+	if !ok || !strings.Contains(qNode.Value, "us") {
+		t.Fatalf("expected GraphQL Query Editor synced, got ok=%v node=%+v", ok, qNode)
+	}
+
+	// Autocomplete suggestion chip "users" should appear and insert field snippet cleanly
+	if err := tt.Click("users"); err != nil {
+		t.Fatalf("click autocomplete suggestion users: %v", err)
+	}
+	tt.Frame()
+
+	var queryAfter string
+	state.View(func(s *models.AppState) {
+		queryAfter = s.GQLRequest.Query
+	})
+	if !strings.Contains(queryAfter, "users(limit: null)") {
+		t.Fatalf("expected autocomplete to complete users(limit: null), got %q", queryAfter)
+	}
+
+	// Variables editor reflects state updates and Reset {} clears it cleanly
+	state.Mutate(func(s *models.AppState) {
+		s.GQLRequest.VariablesJSON = "{\n  \"limit\": 25\n}"
+	})
+	tt.Frame()
+	vNode, ok := tt.Access("GraphQL Variables Editor")
+	if !ok || !strings.Contains(vNode.Value, "\"limit\": 25") {
+		t.Fatalf("expected GraphQL Variables Editor synced, got ok=%v node=%+v", ok, vNode)
+	}
+
+	if err := tt.Click("Reset {}"); err != nil {
+		t.Fatalf("click Reset {}: %v", err)
+	}
+	tt.Frame()
+	var varsAfter string
+	state.View(func(s *models.AppState) {
+		varsAfter = s.GQLRequest.VariablesJSON
+	})
+	if varsAfter != "{}" {
+		t.Fatalf("expected Reset {} to set VariablesJSON to \"{}\", got %q", varsAfter)
 	}
 }

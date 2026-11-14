@@ -35,6 +35,64 @@ func (s *AppState) SetGraphQLQuery(query string) {
 	s.GQLRequest.Query = query
 	s.updateGraphQLSuggestionsLocked(query)
 	s.mu.Unlock()
+	s.RequestRedraw()
+}
+
+// ApplyGraphQLSuggestion inserts or completes a schema field suggestion in the active query document.
+func (s *AppState) ApplyGraphQLSuggestion(fieldName string) {
+	fieldName = strings.TrimSpace(fieldName)
+	if fieldName == "" {
+		return
+	}
+	s.Mutate(func(state *AppState) {
+		var matchedField *GraphQLField
+		if state.GQLSchema != nil {
+			for _, t := range state.GQLSchema.Types {
+				for _, f := range t.Fields {
+					if f.Name == fieldName {
+						fc := f
+						matchedField = &fc
+						break
+					}
+				}
+				if matchedField != nil {
+					break
+				}
+			}
+		}
+
+		snippet := fieldName
+		if matchedField != nil && len(matchedField.Args) > 0 {
+			var argPairs []string
+			for _, a := range matchedField.Args {
+				argPairs = append(argPairs, a.Name+": null")
+			}
+			snippet += "(" + strings.Join(argPairs, ", ") + ")"
+		}
+
+		cur := state.GQLRequest.Query
+		trimmed := strings.TrimSpace(cur)
+		if trimmed == "" {
+			state.GQLRequest.Query = "query {\n  " + snippet + "\n}"
+		} else if idx := strings.LastIndex(cur, "}"); idx > 0 {
+			prefixBeforeClose := strings.TrimRight(cur[:idx], " \t")
+			lines := strings.Split(prefixBeforeClose, "\n")
+			lastLine := strings.TrimSpace(lines[len(lines)-1])
+			if lastLine != "" && !strings.Contains(lastLine, "{") && strings.HasPrefix(strings.ToLower(fieldName), strings.ToLower(lastLine)) {
+				lastLineStart := strings.LastIndex(prefixBeforeClose, lines[len(lines)-1])
+				state.GQLRequest.Query = cur[:lastLineStart] + snippet + "\n" + cur[idx:]
+			} else {
+				sep := "\n  "
+				if strings.HasSuffix(prefixBeforeClose, "\n") {
+					sep = "  "
+				}
+				state.GQLRequest.Query = prefixBeforeClose + sep + snippet + "\n" + cur[idx:]
+			}
+		} else {
+			state.GQLRequest.Query = strings.TrimRight(cur, "\n") + "\n  " + snippet
+		}
+		state.updateGraphQLSuggestionsLocked(state.GQLRequest.Query)
+	})
 }
 
 // SetGraphQLVariables updates the GraphQL variables JSON text.
@@ -176,12 +234,24 @@ func (s *AppState) updateGraphQLSuggestionsLocked(query string) {
 	}
 	prefix := ""
 	lines := strings.Split(query, "\n")
-	if len(lines) > 0 {
-		last := strings.TrimSpace(lines[len(lines)-1])
-		fields := strings.Fields(last)
-		if len(fields) > 0 {
-			prefix = strings.ToLower(fields[len(fields)-1])
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || line == "}" {
+			continue
 		}
+		if strings.HasSuffix(line, "{") {
+			// Cursor is on an opening brace header; suggest all root/selected fields.
+			prefix = ""
+			break
+		}
+		fields := strings.Fields(line)
+		if len(fields) > 0 {
+			cand := strings.TrimRight(fields[len(fields)-1], "{}")
+			if cand != "" && !strings.Contains(cand, "(") {
+				prefix = strings.ToLower(cand)
+			}
+		}
+		break
 	}
 
 	seen := make(map[string]bool)
@@ -200,6 +270,17 @@ func (s *AppState) updateGraphQLSuggestionsLocked(query string) {
 		if t.Name == s.GQLSchema.QueryTypeName || t.Name == s.GQLSchema.MutationTypeName || t.Name == s.GQLSelectedType {
 			for _, f := range t.Fields {
 				addCandidate(f.Name)
+			}
+		}
+	}
+	if len(suggestions) == 0 && prefix != "" {
+		// Fall back to full field list when prefix is an already-complete field name.
+		prefix = ""
+		for _, t := range s.GQLSchema.Types {
+			if t.Name == s.GQLSchema.QueryTypeName || t.Name == s.GQLSchema.MutationTypeName || t.Name == s.GQLSelectedType {
+				for _, f := range t.Fields {
+					addCandidate(f.Name)
+				}
 			}
 		}
 	}

@@ -18,9 +18,12 @@ type syncedCodeEditor struct {
 }
 
 type stateEditorPair struct {
-	mu       sync.Mutex
-	body     *syncedCodeEditor
-	response *syncedCodeEditor
+	mu          sync.Mutex
+	body        *syncedCodeEditor
+	response    *syncedCodeEditor
+	gqlQuery    *syncedCodeEditor
+	gqlVars     *syncedCodeEditor
+	gqlResponse *syncedCodeEditor
 }
 
 var (
@@ -139,6 +142,25 @@ func detectBodyFilename(bodyType, body string) string {
 	return ""
 }
 
+func renderSyncedCodeBox(c *ui.Context, edState *editor.State, height float32, minHeight float32) {
+	col := ui.Column(c).
+		Background(theme.CanvasDeep).
+		Radius(6).
+		Padding(4).
+		Border(1, theme.BorderSubtle)
+	if height > 0 {
+		col.Height(height)
+	} else {
+		col.Grow(1)
+		if minHeight > 0 {
+			col.MinHeight(minHeight)
+		}
+	}
+	col.Children(func() {
+		editor.View(c, edState).Fill()
+	})
+}
+
 func renderRequestBodyEditor(c *ui.Context, state *models.AppState, bodyType, bodyText string) {
 	pair := getStateEditors(state)
 	pair.mu.Lock()
@@ -155,15 +177,7 @@ func renderRequestBodyEditor(c *ui.Context, state *models.AppState, bodyType, bo
 	edState := ed.state
 	pair.mu.Unlock()
 
-	ui.Column(c).
-		Height(180).
-		Background(theme.CanvasDeep).
-		Radius(6).
-		Padding(4).
-		Border(1, theme.BorderSubtle).
-		Children(func() {
-			editor.View(c, edState).Fill()
-		})
+	renderSyncedCodeBox(c, edState, 180, 0)
 }
 
 func renderResponseBodyEditor(c *ui.Context, state *models.AppState, body string) {
@@ -182,14 +196,39 @@ func renderResponseBodyEditor(c *ui.Context, state *models.AppState, body string
 	edState := ed.state
 	pair.mu.Unlock()
 
-	ui.Column(c).
-		Grow(1).
-		MinHeight(120).
-		Background(theme.CanvasDeep).
-		Radius(6).
-		Padding(4).
-		Border(1, theme.BorderSubtle).
-		Children(func() {
-			editor.View(c, edState).Fill()
-		})
+	renderSyncedCodeBox(c, edState, 0, 120)
+}
+
+func renderGraphQLQueryEditor(c *ui.Context, state *models.AppState, queryText string) {
+	pair := getStateEditors(state)
+	pair.mu.Lock()
+	if pair.gqlQuery == nil {
+		pair.gqlQuery = newSyncedCodeEditor(false, "GraphQL Query Editor", "query {\n  \n}")
+	}
+	ed := pair.gqlQuery
+	ed.applyThemeAndLang(c, "query.graphql")
+	ed.syncEditable(queryText, func(updated string) {
+		state.SetGraphQLQuery(updated)
+	})
+	edState := ed.state
+	pair.mu.Unlock()
+
+	renderSyncedCodeBox(c, edState, 0, 140)
+}
+
+func renderGraphQLVariablesEditor(c *ui.Context, state *models.AppState, varsText string) {
+	pair := getStateEditors(state)
+	pair.mu.Lock()
+	if pair.gqlVars == nil {
+		pair.gqlVars = newSyncedCodeEditor(false, "GraphQL Variables Editor", "{\n  \"id\": \"1\"\n}")
+	}
+	ed := pair.gqlVars
+	ed.applyThemeAndLang(c, "variables.json")
+	ed.syncEditable(varsText, func(updated string) {
+		state.SetGraphQLVariables(updated)
+	})
+	edState := ed.state
+	pair.mu.Unlock()
+
+	renderSyncedCodeBox(c, edState, 130, 0)
 }

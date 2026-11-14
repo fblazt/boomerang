@@ -14,15 +14,16 @@ import (
 // schema introspection documentation drawer, split query/variables panes, and telemetry response.
 func GraphQLView(c *ui.Context, state *models.AppState) ui.Element {
 	var (
-		req            models.GraphQLRequest
-		schema         *models.GraphQLSchema
-		selectedType   string
-		schemaSearch   string
-		drawerOpen     bool
-		introspecting  bool
-		loading        bool
-		resp           *models.GraphQLResponse
-		gqlErr         string
+		req           models.GraphQLRequest
+		schema        *models.GraphQLSchema
+		selectedType  string
+		schemaSearch  string
+		drawerOpen    bool
+		introspecting bool
+		loading       bool
+		resp          *models.GraphQLResponse
+		gqlErr        string
+		suggestions   []string
 	)
 	state.View(func(s *models.AppState) {
 		req = s.GQLRequest
@@ -34,6 +35,7 @@ func GraphQLView(c *ui.Context, state *models.AppState) ui.Element {
 		loading = s.GQLLoading
 		resp = s.GQLResponse
 		gqlErr = s.GQLError
+		suggestions = append([]string(nil), s.GQLAutocompleteItems...)
 	})
 
 	if c.Shortcut(ui.Cmd, ui.KeyEnter) && !loading {
@@ -67,27 +69,31 @@ func GraphQLView(c *ui.Context, state *models.AppState) ui.Element {
 				Gap(12).
 				AlignItems(ui.Stretch).
 				Children(func() {
-					// Workspace Document & Response placeholder (enhanced in Commits #29 & #30)
+					// Split Query Document & Query Variables Editor
+					renderGraphQLDocumentPane(c, state, req, suggestions)
+
+					// Response pane placeholder (telemetry & JSON viewer enhanced in Commit #30)
 					primitives.ElevatedPlane(c, func() {
 						ui.Column(c).
 							Grow(1).
 							Padding(14).
 							Gap(10).
 							Children(func() {
-								ui.Text(c, "GraphQL Workspace").
-									Font(theme.FontSans).
-									FontSize(theme.SizeHeading).
-									Bold().
-									TextColor(theme.TextPrimary)
-								ui.Text(c, req.Query).
+								ui.Text(c, "RESPONSE").
 									Font(theme.FontMono).
-									FontSize(theme.SizeBase).
+									FontSize(theme.SizeBadge).
+									Bold().
 									TextColor(theme.TextSecondary)
 								if resp != nil {
 									ui.Text(c, resp.DataJSON).
 										Font(theme.FontMono).
 										FontSize(theme.SizeBase).
 										TextColor(theme.TextPrimary)
+								} else {
+									ui.Text(c, "Execute a GraphQL operation to view JSON data and resolver telemetry.").
+										Font(theme.FontSans).
+										FontSize(theme.SizeBase).
+										TextColor(theme.TextMuted)
 								}
 							})
 					}).Grow(1)
@@ -97,6 +103,85 @@ func GraphQLView(c *ui.Context, state *models.AppState) ui.Element {
 					}
 				})
 		})
+}
+
+func renderGraphQLDocumentPane(c *ui.Context, state *models.AppState, req models.GraphQLRequest, suggestions []string) {
+	primitives.ElevatedPlane(c, func() {
+		ui.Column(c).
+			Grow(1).
+			Children(func() {
+				// Top half: Query Document editor
+				ui.Column(c).
+					Grow(1).
+					Padding(12).
+					Gap(8).
+					Children(func() {
+						ui.Row(c).
+							AlignItems(ui.Center).
+							Gap(8).
+							Children(func() {
+								ui.Text(c, "QUERY DOCUMENT").
+									Font(theme.FontMono).
+									FontSize(theme.SizeBadge).
+									Bold().
+									TextColor(theme.TextSecondary)
+								ui.Box(c).Grow(1)
+								ui.Text(c, "⌘↵ Execute").
+									Font(theme.FontMono).
+									FontSize(theme.SizeShortcut).
+									TextColor(theme.TextDim)
+							})
+
+						renderGraphQLQueryEditor(c, state, req.Query)
+
+						if len(suggestions) > 0 {
+							ui.Row(c).
+								AlignItems(ui.Center).
+								Gap(6).
+								Wrap().
+								Children(func() {
+									ui.Text(c, "SUGGESTIONS").
+										Font(theme.FontMono).
+										FontSize(theme.SizeShortcut).
+										TextColor(theme.TextDim)
+									for _, item := range suggestions {
+										suggestion := item
+										renderStreamPillBtn(c, suggestion, false, func() {
+											state.ApplyGraphQLSuggestion(suggestion)
+										})
+									}
+								})
+						}
+					})
+
+				// Horizontal splitter border between Query Document and Query Variables
+				ui.Column(c).
+					Padding(10, 12, 12, 12).
+					Gap(8).
+					BorderWidth(1, 0, 0, 0).
+					BorderColor(theme.BorderSubtle).
+					Children(func() {
+						ui.Row(c).
+							AlignItems(ui.Center).
+							Gap(8).
+							Children(func() {
+								ui.Text(c, "QUERY VARIABLES (JSON)").
+									Font(theme.FontMono).
+									FontSize(theme.SizeBadge).
+									Bold().
+									TextColor(theme.TextSecondary)
+								ui.Box(c).Grow(1)
+								renderStreamPillBtn(c, "Reset {}", false, func() {
+									state.Mutate(func(s *models.AppState) {
+										s.GQLRequest.VariablesJSON = "{}"
+									})
+								})
+							})
+
+						renderGraphQLVariablesEditor(c, state, req.VariablesJSON)
+					})
+			})
+	}).Grow(1)
 }
 
 func renderGraphQLToolbar(
