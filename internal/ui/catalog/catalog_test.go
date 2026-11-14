@@ -56,7 +56,7 @@ func TestComponentCatalogView(t *testing.T) {
 	if !tt.HasText("6. Workspace Environment & Secret Vault Manager") {
 		t.Fatal("expected vault manager section header")
 	}
-	if !tt.HasText("Brilliant Board 05 • Encrypted Secrets & Transport Policies") {
+	if !tt.HasText("Encrypted secrets storage, variable scopes, and transport policies") {
 		t.Fatal("expected vault manager subtitle")
 	}
 }

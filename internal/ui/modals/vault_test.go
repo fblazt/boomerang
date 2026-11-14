@@ -23,7 +23,7 @@ func TestVaultManagerModal_DirectRender(t *testing.T) {
 	if !tt.HasText("Workspace Environment & Secret Vault Manager") {
 		t.Fatal("expected modal title")
 	}
-	if !tt.HasText("Brilliant Board 05 • Encrypted Secrets & Transport Policies") {
+	if !tt.HasText("Encrypted secrets storage, variable scopes, and transport policies") {
 		t.Fatal("expected modal subtitle")
 	}
 
@@ -135,6 +135,50 @@ func TestVaultModalHost_ModalDismiss(t *testing.T) {
 
 	if state.ShowVaultModal {
 		t.Fatal("expected ShowVaultModal to be false after Close")
+	}
+}
+
+func TestVaultModalHost_EscapeDismiss(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ShowVaultModal = true
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		VaultModalHost(c, state)
+	}, 1200, 800)
+	tt.Frame()
+
+	if !tt.HasText("Workspace Environment & Secret Vault Manager") {
+		t.Fatal("expected modal to be rendered when ShowVaultModal is true")
+	}
+
+	// Press Escape to dismiss modal
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+
+	if state.ShowVaultModal {
+		t.Fatal("expected ShowVaultModal to be false after pressing Escape")
+	}
+}
+
+func TestVaultModalHost_BackdropClickDismiss(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ShowVaultModal = true
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		VaultModalHost(c, state)
+	}, 1200, 800)
+	tt.Frame()
+
+	if !tt.HasText("Workspace Environment & Secret Vault Manager") {
+		t.Fatal("expected modal to be rendered when ShowVaultModal is true")
+	}
+
+	// Click on backdrop outside modal (e.g. top-left corner at 10, 10)
+	tt.ClickAt(10, 10)
+	tt.Frame()
+
+	if state.ShowVaultModal {
+		t.Fatal("expected ShowVaultModal to be false after clicking backdrop")
 	}
 }
 

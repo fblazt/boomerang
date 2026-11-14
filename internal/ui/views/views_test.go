@@ -553,7 +553,7 @@ func TestShellView_VaultModalIntegration(t *testing.T) {
 	tt.Frame()
 
 	// Initially modal is not visible
-	if tt.HasText("Brilliant Board 05 • Encrypted Secrets & Transport Policies") {
+	if tt.HasText("Workspace Environment & Secret Vault Manager") || tt.HasText("Encrypted secrets storage, variable scopes, and transport policies") {
 		t.Fatal("modal should not be visible initially")
 	}
 

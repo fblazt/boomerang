@@ -11,16 +11,27 @@ import (
 	"github.com/fblazt/boomerang/internal/ui/theme"
 )
 
-// VaultModalHost wraps the modal dialog in ui.Modal for standard popup dimming and escape dismissal.
+// VaultModalHost wraps the modal dialog in ui.DialogBase for clean, borderless popup dimming and escape dismissal.
 func VaultModalHost(c *ui.Context, state *models.AppState) ui.Element {
 	var showModal bool
 	state.View(func(s *models.AppState) {
 		showModal = s.ShowVaultModal
 	})
 
-	return ui.Modal(c, &showModal, func() {
+	if !showModal {
+		return ui.Element{}
+	}
+
+	dlg := ui.DialogBase(c, &showModal, func(backdrop ui.Element, panel ui.Element) {
+		backdrop.Background(ui.RGBA(0, 0, 0, 0.70))
 		VaultManagerModal(c, state)
 	})
+
+	if dlg.Dismissed() || !showModal || c.Shortcut(0, ui.KeyEscape) {
+		state.CloseVaultModal()
+	}
+
+	return dlg
 }
 
 // VaultManagerModal renders the full Environment & Secret Vault Manager dialog strictly matching Brilliant Board 05.
@@ -59,13 +70,15 @@ func VaultManagerModal(c *ui.Context, state *models.AppState) ui.Element {
 		Width(920).
 		Height(580).
 		Radius(12).
+		Clip().
 		LinearGradient(ui.LinearGradient{
 			From:  theme.SurfacePlaneTop,
 			To:    theme.SurfacePlaneBottom,
 			Angle: 180,
 		}).
 		Border(1, theme.BorderMedium).
-		Shadow(0, 16, 48, 0, ui.RGBA(0, 0, 0, 0.75)).
+		Shadow(0, 24, 60, 0, ui.RGBA(0, 0, 0, 0.80)).
+		Shadow(0, 0, 0, 1, ui.RGBA(255, 255, 255, 0.08)).
 		Children(func() {
 			// 1. Modal Titlebar Header
 			renderModalHeader(c, state)
@@ -93,12 +106,9 @@ func renderModalHeader(c *ui.Context, state *models.AppState) {
 		Background(theme.SurfaceSubPlane).
 		BorderWidth(0, 0, 1, 0).
 		BorderColor(theme.BorderSubtle).
+		Radius(12, 12, 0, 0).
 		AlignItems(ui.Center).
 		Children(func() {
-			// Tactile Badge
-			primitives.KeycapBadge(c, "GET") // will display GET style badge for icon branding
-			ui.Box(c).Width(10)
-
 			ui.Column(c).
 				Gap(2).
 				Children(func() {
@@ -108,7 +118,7 @@ func renderModalHeader(c *ui.Context, state *models.AppState) {
 						Bold().
 						TextColor(theme.TextPrimary)
 
-					ui.Text(c, "Brilliant Board 05 • Encrypted Secrets & Transport Policies").
+					ui.Text(c, "Encrypted secrets storage, variable scopes, and transport policies").
 						Font(theme.FontSans).
 						FontSize(10).
 						TextColor(theme.TextMuted)
@@ -127,7 +137,7 @@ func renderModalHeader(c *ui.Context, state *models.AppState) {
 				Gap(6).
 				Focusable()
 
-			if closeBtn.Clicked() {
+			if closeBtn.Clicked() || c.Shortcut(0, ui.KeyEscape) {
 				state.CloseVaultModal()
 			}
 
@@ -153,6 +163,7 @@ func renderEnvironmentsSidebar(
 		Background(theme.SurfaceSubPlane).
 		BorderWidth(0, 1, 0, 0).
 		BorderColor(theme.BorderSubtle).
+		Radius(0, 0, 0, 12).
 		Padding(12).
 		Gap(6).
 		Children(func() {
@@ -398,11 +409,17 @@ func renderEnvironmentDetailPane(
 				BorderColor(theme.BorderSubtle).
 				Gap(16).
 				Children(func() {
+					isVarActive := activeTab == "variables" || activeTab == ""
+					varTextColor := theme.TextSecondary
+					if isVarActive {
+						varTextColor = theme.TextPrimary
+					}
+
 					tabVar := ui.Row(c).
 						Height(30).
 						AlignItems(ui.Center).
 						Focusable()
-					if activeTab == "variables" || activeTab == "" {
+					if isVarActive {
 						tabVar.BorderWidth(0, 0, 2, 0).BorderColor(theme.RimFocus)
 					}
 					if tabVar.Clicked() {
@@ -413,14 +430,20 @@ func renderEnvironmentDetailPane(
 							Font(theme.FontSans).
 							FontSize(theme.SizeBody).
 							Bold().
-							TextColor(theme.TextPrimary)
+							TextColor(varTextColor)
 					})
+
+					isTransportActive := activeTab == "transport"
+					transportTextColor := theme.TextSecondary
+					if isTransportActive {
+						transportTextColor = theme.TextPrimary
+					}
 
 					tabTransport := ui.Row(c).
 						Height(30).
 						AlignItems(ui.Center).
 						Focusable()
-					if activeTab == "transport" {
+					if isTransportActive {
 						tabTransport.BorderWidth(0, 0, 2, 0).BorderColor(theme.RimFocus)
 					}
 					if tabTransport.Clicked() {
@@ -431,7 +454,7 @@ func renderEnvironmentDetailPane(
 							Font(theme.FontSans).
 							FontSize(theme.SizeBody).
 							Bold().
-							TextColor(theme.TextSecondary)
+							TextColor(transportTextColor)
 					})
 				})
 
@@ -460,14 +483,14 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 				AlignItems(ui.Center).
 				Gap(6).
 				Children(func() {
-					ui.Box(c).Width(16) // Checkbox spacer
+					ui.Box(c).Width(16) // Checkbox spacer (14 + 2)
 					ui.Text(c, "VARIABLE NAME").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(136)
 					ui.Text(c, "INITIAL VALUE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(126)
 					ui.Text(c, "CURRENT VALUE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Grow(1)
-					ui.Text(c, "TYPE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(60)
-					ui.Text(c, "SECRET").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(46)
-					ui.Text(c, "SCOPE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(36)
-					ui.Box(c).Width(22) // Delete button spacer
+					ui.Text(c, "TYPE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(58)
+					ui.Text(c, "SECRET").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(44)
+					ui.Text(c, "SCOPE").Font(theme.FontMono).FontSize(9).Bold().TextColor(theme.TextDim).Width(34)
+					ui.Box(c).Width(20) // Delete button spacer
 				})
 
 			// Variable Rows
@@ -483,11 +506,16 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 						row := ui.Row(c).
 							Height(32).
 							PaddingX(8).
-							Radius(4).
-							Background(theme.SurfaceCardTop).
+							Radius(6).
 							Border(1, theme.BorderSubtle).
 							AlignItems(ui.Center).
 							Gap(6)
+
+						if v.Enabled {
+							row.Background(theme.SurfaceCardTop)
+						} else {
+							row.Background(ui.RGB(0x12, 0x14, 0x1C))
+						}
 
 						row.Children(func() {
 							// 1. Enabled Checkbox
@@ -578,8 +606,10 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 							if valEl.Changed() && displayVal != "" {
 								updated := v
 								if isSecret {
-									updated.CurrentValue = displayVal
-									state.UpdateVariableInEnvWithSecret(target.Name, v.Key, updated, displayVal)
+									if isRevealed {
+										updated.CurrentValue = displayVal
+										state.UpdateVariableInEnvWithSecret(target.Name, v.Key, updated, displayVal)
+									}
 								} else {
 									updated.CurrentValue = displayVal
 									state.UpdateVariableInEnv(target.Name, v.Key, updated)
@@ -695,22 +725,16 @@ func renderVariablesGridTab(c *ui.Context, state *models.AppState, target models
 					}
 				})
 
-			// Add Variable Row Quick Form
+			// Add Variable Action Button (clean tactile button, no empty full-width row)
 			ui.Row(c).
-				Height(32).
-				PaddingX(8).
-				Radius(4).
-				Background(theme.SurfaceSubPlane).
-				Border(1, theme.BorderSubtle).
-				AlignItems(ui.Center).
-				Gap(8).
+				PaddingX(2).
 				Children(func() {
 					addBtn := ui.Row(c).
 						Height(24).
 						PaddingX(10).
 						Radius(4).
-						Background(theme.SurfaceCardTop).
-						Border(1, theme.BorderMedium).
+						Background(theme.SurfaceSubPlane).
+						Border(1, theme.BorderSubtle).
 						AlignItems(ui.Center).
 						Focusable()
 
