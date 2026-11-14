@@ -683,3 +683,47 @@ func TestRESTFlow_WithMockServer(t *testing.T) {
 		t.Fatal("expected response body content rendered in panel")
 	}
 }
+
+func TestRequestTabsView_SettingsInteractiveToggles(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.ActiveTab = "settings"
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		RequestTabsView(c, state)
+	}, 900, 500)
+	tt.Frame()
+
+	if !tt.HasText("Strict SSL Verification") || !tt.HasText("Follow Redirects") || !tt.HasText("Enable HTTP/2") {
+		t.Fatal("expected all three request settings rows")
+	}
+
+	if err := tt.Click("Follow Redirects"); err != nil {
+		t.Fatalf("failed to click Follow Redirects: %v", err)
+	}
+	tt.Frame()
+
+	if state.ActiveRequest.FollowRedirects == nil || *state.ActiveRequest.FollowRedirects {
+		t.Fatalf("expected FollowRedirects override false, got %v", state.ActiveRequest.FollowRedirects)
+	}
+	if !tt.HasText("OVERRIDE") || !tt.HasText("Reset to Environment Defaults") {
+		t.Fatal("expected OVERRIDE badge and Reset to Environment Defaults button")
+	}
+
+	if err := tt.Click("Enable HTTP/2"); err != nil {
+		t.Fatalf("failed to click Enable HTTP/2: %v", err)
+	}
+	tt.Frame()
+
+	if state.ActiveRequest.EnableHTTP2 == nil || *state.ActiveRequest.EnableHTTP2 {
+		t.Fatalf("expected EnableHTTP2 override false, got %v", state.ActiveRequest.EnableHTTP2)
+	}
+
+	if err := tt.Click("Reset to Environment Defaults"); err != nil {
+		t.Fatalf("failed to click Reset to Environment Defaults: %v", err)
+	}
+	tt.Frame()
+
+	if state.ActiveRequest.FollowRedirects != nil || state.ActiveRequest.EnableHTTP2 != nil {
+		t.Fatal("expected overrides cleared after reset")
+	}
+}

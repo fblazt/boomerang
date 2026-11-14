@@ -386,3 +386,51 @@ func TestTracer_Durations(t *testing.T) {
 		t.Errorf("expected total >= 0, got %d", telem.Total)
 	}
 }
+
+func TestClient_FollowRedirects_And_SettingOverrides(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("final-destination"))
+	})
+
+	client := NewClientWithTransport(&mockTransport{handler: handler}, 5*time.Second)
+
+	// Default follows 3xx redirect
+	resp, err := client.Execute(context.Background(), models.RequestModel{
+		Method: "GET",
+		URL:    "http://api.test/redirect",
+	})
+	if err != nil || resp.StatusCode != http.StatusOK || resp.Body != "final-destination" {
+		t.Fatalf("expected redirect to follow to 200 final-destination, got status=%d body=%q err=%v", resp.StatusCode, resp.Body, err)
+	}
+
+	// FollowRedirects=false stops at 302 Found
+	followFalse := false
+	resp, err = client.Execute(context.Background(), models.RequestModel{
+		Method:          "GET",
+		URL:             "http://api.test/redirect",
+		FollowRedirects: &followFalse,
+	})
+	if err != nil || resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected 302 Found when FollowRedirects=false, got status=%d err=%v", resp.StatusCode, err)
+	}
+
+	// EffectiveTransportPolicy merges per-request StrictSSL and EnableHTTP2 overrides
+	strictFalse := false
+	http2False := false
+	req := models.RequestModel{
+		StrictSSL:   &strictFalse,
+		EnableHTTP2: &http2False,
+	}
+	eff := req.EffectiveTransportPolicy(&models.TransportPolicy{
+		Protocol:  "HTTP/2",
+		StrictSSL: true,
+	})
+	if eff.StrictSSL || eff.Protocol != "HTTP/1.1" {
+		t.Fatalf("expected StrictSSL=false and Protocol=HTTP/1.1, got %+v", eff)
+	}
+}

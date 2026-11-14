@@ -202,8 +202,9 @@ func (c *Client) Execute(ctx context.Context, req models.RequestModel) (*models.
 	httpReq = httpReq.WithContext(tracedCtx)
 
 	httpClient := c.httpClient
-	if !c.hasCustomTransport && req.TransportPolicy != nil {
-		tr, cleanup, err := BuildTransport(req.TransportPolicy)
+	if !c.hasCustomTransport && (req.TransportPolicy != nil || req.StrictSSL != nil || req.EnableHTTP2 != nil) {
+		effective := req.EffectiveTransportPolicy(req.TransportPolicy)
+		tr, cleanup, err := BuildTransport(&effective)
 		if err != nil {
 			return &models.ResponseModel{
 				Error: err.Error(),
@@ -215,6 +216,15 @@ func (c *Client) Execute(ctx context.Context, req models.RequestModel) (*models.
 		httpClient = &http.Client{
 			Transport: tr,
 			Timeout:   c.timeout,
+		}
+	}
+	if !req.EffectiveFollowRedirects() {
+		httpClient = &http.Client{
+			Transport: httpClient.Transport,
+			Timeout:   httpClient.Timeout,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		}
 	}
 

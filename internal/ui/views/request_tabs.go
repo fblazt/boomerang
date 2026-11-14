@@ -762,45 +762,127 @@ func renderRadioOption(c *ui.Context, label string, selected bool, onClick func(
 }
 
 func renderSettingsTab(c *ui.Context, state *models.AppState) {
+	var envPolicy models.TransportPolicy
+	var req models.RequestModel
+
+	state.View(func(s *models.AppState) {
+		req = s.ActiveRequest
+		for _, env := range s.Environments {
+			if env.Name == s.ActiveEnv {
+				envPolicy = env.TransportPolicy
+				break
+			}
+		}
+	})
+
+	effective := req.EffectiveTransportPolicy(&envPolicy)
+	strictSSL := effective.StrictSSL
+	followRedirects := req.EffectiveFollowRedirects()
+	enableHTTP2 := effective.Protocol != "HTTP/1.1"
+	hasOverrides := req.StrictSSL != nil || req.FollowRedirects != nil || req.EnableHTTP2 != nil
+
 	ui.Column(c).
 		Gap(8).
 		Children(func() {
-			renderSettingRow(c, "Strict SSL Verification", "Validate SSL certificates against system trust store", true)
-			renderSettingRow(c, "Follow Redirects", "Automatically follow 3xx HTTP redirects", true)
-			renderSettingRow(c, "Enable HTTP/2", "Use HTTP/2 multiplexing where available", true)
+			renderSettingRow(c, "Strict SSL Verification", "Validate SSL certificates against trust store / pinned Root CA", strictSSL, req.StrictSSL != nil, func() {
+				next := !strictSSL
+				state.Mutate(func(s *models.AppState) {
+					s.ActiveRequest.StrictSSL = &next
+				})
+			})
+			renderSettingRow(c, "Follow Redirects", "Automatically follow 3xx HTTP redirects", followRedirects, req.FollowRedirects != nil, func() {
+				next := !followRedirects
+				state.Mutate(func(s *models.AppState) {
+					s.ActiveRequest.FollowRedirects = &next
+				})
+			})
+			renderSettingRow(c, "Enable HTTP/2", "Use HTTP/2 multiplexing where available (overrides to HTTP/1.1 when OFF)", enableHTTP2, req.EnableHTTP2 != nil, func() {
+				next := !enableHTTP2
+				state.Mutate(func(s *models.AppState) {
+					s.ActiveRequest.EnableHTTP2 = &next
+				})
+			})
+
+			if hasOverrides {
+				ui.Row(c).
+					Children(func() {
+						resetBtn := ui.Row(c).
+							Height(26).
+							PaddingX(10).
+							Radius(4).
+							Background(theme.SurfaceSubPlane).
+							Border(1, theme.BorderSubtle).
+							AlignItems(ui.Center).
+							Focusable()
+
+						if resetBtn.Clicked() {
+							state.Mutate(func(s *models.AppState) {
+								s.ActiveRequest.StrictSSL = nil
+								s.ActiveRequest.FollowRedirects = nil
+								s.ActiveRequest.EnableHTTP2 = nil
+							})
+						}
+
+						resetBtn.Children(func() {
+							ui.Text(c, "Reset to Environment Defaults").
+								Font(theme.FontSans).
+								FontSize(theme.SizeCaption).
+								TextColor(theme.RimFocus)
+						})
+					})
+			}
 		})
 }
 
-func renderSettingRow(c *ui.Context, title, desc string, enabled bool) {
-	ui.Row(c).
+func renderSettingRow(c *ui.Context, title, desc string, enabled, overridden bool, onToggle func()) {
+	row := ui.Row(c).
 		Height(40).
 		PaddingX(10).
 		Radius(6).
 		Background(theme.SurfaceCardTop).
 		Border(1, theme.BorderSubtle).
 		AlignItems(ui.Center).
-		Children(func() {
-			ui.Column(c).
-				Grow(1).
-				Children(func() {
-					ui.Text(c, title).Font(theme.FontSans).FontSize(theme.SizeBase).TextColor(theme.TextPrimary)
-					ui.Text(c, desc).Font(theme.FontSans).FontSize(theme.SizeCaption).TextColor(theme.TextDim)
-				})
+		Focusable()
 
-			ui.Row(c).
-				PaddingX(8).
-				PaddingY(3).
-				Radius(4).
-				Background(theme.SurfaceSubPlane).
-				Border(1, theme.BorderSubtle).
-				Children(func() {
-					val := "OFF"
-					col := theme.TextDim
-					if enabled {
-						val = "ON"
-						col = theme.RimFocus
-					}
-					ui.Text(c, val).Font(theme.FontMono).FontSize(10).Bold().TextColor(col)
-				})
-		})
+	if row.Clicked() && onToggle != nil {
+		onToggle()
+	}
+
+	row.Children(func() {
+		ui.Column(c).
+			Grow(1).
+			Children(func() {
+				ui.Text(c, title).Font(theme.FontSans).FontSize(theme.SizeBase).TextColor(theme.TextPrimary)
+				ui.Text(c, desc).Font(theme.FontSans).FontSize(theme.SizeCaption).TextColor(theme.TextDim)
+			})
+
+		ui.Row(c).
+			Gap(6).
+			AlignItems(ui.Center).
+			Children(func() {
+				if overridden {
+					ui.Text(c, "OVERRIDE").
+						Font(theme.FontMono).
+						FontSize(8).
+						Bold().
+						TextColor(theme.TextDim)
+				}
+
+				ui.Row(c).
+					PaddingX(8).
+					PaddingY(3).
+					Radius(4).
+					Background(theme.SurfaceSubPlane).
+					Border(1, theme.BorderSubtle).
+					Children(func() {
+						val := "OFF"
+						col := theme.TextDim
+						if enabled {
+							val = "ON"
+							col = theme.RimFocus
+						}
+						ui.Text(c, val).Font(theme.FontMono).FontSize(10).Bold().TextColor(col)
+					})
+			})
+	})
 }

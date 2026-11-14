@@ -44,7 +44,43 @@ type RequestModel struct {
 	APIKeyKey       string           `json:"apikey_key,omitempty"`
 	APIKeyValue     string           `json:"apikey_value,omitempty"`
 	APIKeyIn        string           `json:"apikey_in,omitempty"` // header, query
+	StrictSSL       *bool            `json:"strict_ssl,omitempty"`
+	FollowRedirects *bool            `json:"follow_redirects,omitempty"`
+	EnableHTTP2     *bool            `json:"enable_http2,omitempty"`
 	TransportPolicy *TransportPolicy `json:"transport_policy,omitempty"`
+}
+
+// EffectiveFollowRedirects returns whether HTTP 3xx redirects should be followed (defaults to true).
+func (r RequestModel) EffectiveFollowRedirects() bool {
+	if r.FollowRedirects != nil {
+		return *r.FollowRedirects
+	}
+	return true
+}
+
+// EffectiveTransportPolicy merges per-request overrides over an environment TransportPolicy.
+func (r RequestModel) EffectiveTransportPolicy(envPolicy *TransportPolicy) TransportPolicy {
+	policy := TransportPolicy{
+		Protocol:  "HTTP/2",
+		StrictSSL: true,
+	}
+	if envPolicy != nil {
+		policy = *envPolicy
+		if policy.Protocol == "" {
+			policy.Protocol = "HTTP/2"
+		}
+	}
+	if r.StrictSSL != nil {
+		policy.StrictSSL = *r.StrictSSL
+	}
+	if r.EnableHTTP2 != nil && policy.Protocol != "HTTP/3" {
+		if *r.EnableHTTP2 {
+			policy.Protocol = "HTTP/2"
+		} else {
+			policy.Protocol = "HTTP/1.1"
+		}
+	}
+	return policy
 }
 
 // ResponseModel represents the execution response.
