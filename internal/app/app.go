@@ -11,6 +11,7 @@ import (
 	"github.com/fblazt/boomerang/internal/engine/env"
 	"github.com/fblazt/boomerang/internal/engine/graphql"
 	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
+	"github.com/fblazt/boomerang/internal/engine/importer"
 	"github.com/fblazt/boomerang/internal/engine/realtime"
 	"github.com/fblazt/boomerang/internal/engine/runner"
 	"github.com/fblazt/boomerang/internal/engine/storage"
@@ -103,6 +104,7 @@ func NewApp(opts Options) *App {
 	st.SetGraphQLRunner(graphql.NewClient(nil))
 	st.SetTestEvaluator(runner.EvaluateAssertions)
 	st.SetSuiteRunner(runner.NewPoolRunner(enginehttp.NewClient(30*time.Second), env.InterpolateRequest, runner.EvaluateAssertions))
+	st.SetImporterService(importer.NewService())
 
 	app := &App{
 		opts:  opts,

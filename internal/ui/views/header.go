@@ -18,11 +18,13 @@ func HeaderView(c *ui.Context, state *models.AppState) ui.Element {
 	c.OnWindowShortcut(ui.Cmd, ui.KeyE, func() { state.OpenVaultModal() })
 	c.OnWindowShortcut(ui.Cmd, ui.KeyH, func() { state.ToggleHistoryModal() })
 	c.OnWindowShortcut(ui.Cmd, ui.KeyR, func() { state.ToggleRunnerModal() })
+	c.OnWindowShortcut(ui.Cmd, ui.KeyI, func() { state.ToggleImportModal() })
 	c.OnWindowShortcut(0, ui.KeyEscape, func() {
 		state.CloseEnvDropdown()
 		state.CloseVaultModal()
 		state.CloseHistoryModal()
 		state.CloseRunnerModal()
+		state.CloseImportModal()
 	})
 
 	return ui.Row(c).

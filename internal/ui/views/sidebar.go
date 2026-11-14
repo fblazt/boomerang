@@ -67,6 +67,9 @@ func SidebarView(c *ui.Context, state *models.AppState) ui.Element {
 
 					ui.Box(c).Grow(1)
 
+					renderTinyHeaderAction(c, "+Imp", "Import Collection (⌘I)", func() {
+						state.OpenImportModal()
+					})
 					renderTinyHeaderAction(c, "+Col", "New Collection", func() {
 						_, _ = state.CreateCollection(fmt.Sprintf("Collection %d", len(cols)+1))
 					})

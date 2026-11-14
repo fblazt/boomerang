@@ -67,5 +67,8 @@ func ShellView(c *ui.Context, state *models.AppState) ui.Element {
 
 			// Collection Suite Runner Modal Overlay
 			modals.RunnerModalHost(c, state)
+
+			// Universal Importer Modal Overlay
+			modals.ImportModalHost(c, state)
 		})
 }

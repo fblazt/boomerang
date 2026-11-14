@@ -75,6 +75,7 @@ type DraftStore interface {
 type CollectionStore interface {
 	Collections() []Collection
 	CreateCollection(name string) (Collection, error)
+	ImportCollection(col Collection) (Collection, error)
 	RenameCollection(collectionID, name string) error
 	DeleteCollection(collectionID string) error
 	CreateFolder(collectionID, parentFolderID, name string) (Folder, error)
@@ -180,6 +181,17 @@ type AppState struct {
 	RunnerReport        *SuiteRunReport
 	RunnerFilter        string // "all", "passed", "failed"
 	RunnerStatusMessage string
+
+	// Universal Importer Modal State
+	importer             ImporterService
+	ShowImportModal      bool
+	ImportRawText        string
+	ImportFilePath       string
+	ImportTargetName     string
+	ImportDetectedFormat ImportFormat
+	ImportPreviewData    *ImportPreview
+	ImportError          string
+	ImportStatusMessage  string
 
 	// History Timeline Modal State
 	ShowHistoryModal     bool

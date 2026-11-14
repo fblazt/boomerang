@@ -161,6 +161,34 @@ func (s *Store) CreateCollection(name string) (models.Collection, error) {
 	return models.CloneCollection(col), nil
 }
 
+// ImportCollection persists a pre-parsed external collection onto disk and adds it to the store.
+func (s *Store) ImportCollection(col models.Collection) (models.Collection, error) {
+	if strings.TrimSpace(col.Name) == "" {
+		col.Name = "Imported Collection"
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	cloned := models.CloneCollection(col)
+	if cloned.ID == "" {
+		cloned.ID = storage.NewID("col")
+	}
+	cloned.Order = len(s.collections)
+	if cloned.CreatedAt.IsZero() {
+		cloned.CreatedAt = now
+	}
+	cloned.UpdatedAt = now
+
+	if err := s.writeCollectionLocked(cloned); err != nil {
+		return models.Collection{}, err
+	}
+	s.collections = append(s.collections, cloned)
+	sortCollections(s.collections)
+	return models.CloneCollection(cloned), nil
+}
+
 // RenameCollection renames a collection and refreshes its readable JSON filename on disk.
 func (s *Store) RenameCollection(collectionID, name string) error {
 	trimmed := strings.TrimSpace(name)
