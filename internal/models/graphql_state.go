@@ -123,6 +123,18 @@ func (s *AppState) ToggleGraphQLSchemaDrawer() {
 	})
 }
 
+// SetGraphQLResponseTab selects the GraphQL response payload viewer tab ("data", "extensions", "raw").
+func (s *AppState) SetGraphQLResponseTab(tab string) {
+	switch tab {
+	case "data", "extensions", "raw":
+	default:
+		tab = "data"
+	}
+	s.Mutate(func(state *AppState) {
+		state.GQLResponseTab = tab
+	})
+}
+
 // InsertGraphQLFieldSnippet appends a field selection snippet into the active query document.
 func (s *AppState) InsertGraphQLFieldSnippet(field GraphQLField) {
 	s.Mutate(func(state *AppState) {

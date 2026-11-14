@@ -118,6 +118,7 @@ type AppState struct {
 	GQLIntrospecting     bool
 	GQLLoading           bool
 	GQLResponse          *GraphQLResponse
+	GQLResponseTab       string // "data", "extensions", "raw"
 	GQLError             string
 	GQLAutocompleteItems []string
 

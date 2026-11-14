@@ -232,3 +232,22 @@ func renderGraphQLVariablesEditor(c *ui.Context, state *models.AppState, varsTex
 
 	renderSyncedCodeBox(c, edState, 130, 0)
 }
+
+func renderGraphQLResponseEditor(c *ui.Context, state *models.AppState, body string) {
+	if strings.TrimSpace(body) == "" {
+		body = "{}"
+	}
+
+	pair := getStateEditors(state)
+	pair.mu.Lock()
+	if pair.gqlResponse == nil {
+		pair.gqlResponse = newSyncedCodeEditor(true, "GraphQL Response Viewer", "")
+	}
+	ed := pair.gqlResponse
+	ed.applyThemeAndLang(c, "response.json")
+	ed.syncReadOnly(body)
+	edState := ed.state
+	pair.mu.Unlock()
+
+	renderSyncedCodeBox(c, edState, 0, 140)
+}

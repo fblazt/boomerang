@@ -22,6 +22,7 @@ func GraphQLView(c *ui.Context, state *models.AppState) ui.Element {
 		introspecting bool
 		loading       bool
 		resp          *models.GraphQLResponse
+		respTab       string
 		gqlErr        string
 		suggestions   []string
 	)
@@ -34,9 +35,13 @@ func GraphQLView(c *ui.Context, state *models.AppState) ui.Element {
 		introspecting = s.GQLIntrospecting
 		loading = s.GQLLoading
 		resp = s.GQLResponse
+		respTab = s.GQLResponseTab
 		gqlErr = s.GQLError
 		suggestions = append([]string(nil), s.GQLAutocompleteItems...)
 	})
+	if respTab == "" {
+		respTab = "data"
+	}
 
 	if c.Shortcut(ui.Cmd, ui.KeyEnter) && !loading {
 		state.ExecuteGraphQL()
@@ -72,37 +77,155 @@ func GraphQLView(c *ui.Context, state *models.AppState) ui.Element {
 					// Split Query Document & Query Variables Editor
 					renderGraphQLDocumentPane(c, state, req, suggestions)
 
-					// Response pane placeholder (telemetry & JSON viewer enhanced in Commit #30)
-					primitives.ElevatedPlane(c, func() {
-						ui.Column(c).
-							Grow(1).
-							Padding(14).
-							Gap(10).
-							Children(func() {
-								ui.Text(c, "RESPONSE").
-									Font(theme.FontMono).
-									FontSize(theme.SizeBadge).
-									Bold().
-									TextColor(theme.TextSecondary)
-								if resp != nil {
-									ui.Text(c, resp.DataJSON).
-										Font(theme.FontMono).
-										FontSize(theme.SizeBase).
-										TextColor(theme.TextPrimary)
-								} else {
-									ui.Text(c, "Execute a GraphQL operation to view JSON data and resolver telemetry.").
-										Font(theme.FontSans).
-										FontSize(theme.SizeBase).
-										TextColor(theme.TextMuted)
-								}
-							})
-					}).Grow(1)
+					// Resolver telemetry, diagnostics & formatted JSON response pane
+					renderGraphQLResponsePane(c, state, resp, respTab, loading)
 
 					if drawerOpen {
 						renderSchemaDrawer(c, state, schema, selectedType, schemaSearch, introspecting)
 					}
 				})
 		})
+}
+
+func renderGraphQLResponsePane(c *ui.Context, state *models.AppState, resp *models.GraphQLResponse, respTab string, loading bool) {
+	primitives.ElevatedPlane(c, func() {
+		ui.Column(c).
+			Grow(1).
+			Padding(12).
+			Gap(10).
+			Children(func() {
+				ui.Row(c).
+					AlignItems(ui.Center).
+					Gap(8).
+					Children(func() {
+						ui.Text(c, "RESPONSE").
+							Font(theme.FontMono).
+							FontSize(theme.SizeBadge).
+							Bold().
+							TextColor(theme.TextSecondary)
+
+						if resp != nil {
+							statusText := resp.StatusText
+							if statusText == "" && resp.StatusCode > 0 {
+								statusText = fmt.Sprintf("%d", resp.StatusCode)
+							}
+							statusColor := ui.RGB(0x34, 0xD3, 0x99)
+							if resp.StatusCode >= 400 || len(resp.Errors) > 0 || resp.RequestError != "" {
+								statusColor = theme.RimDanger
+							}
+							if statusText != "" {
+								renderHeaderPill(c, statusText, statusColor)
+							}
+							if resp.ResolverTimeMs > 0 {
+								renderHeaderPill(c, fmt.Sprintf("resolver_time: %.1f ms", resp.ResolverTimeMs), theme.RimFocus)
+							}
+							if resp.DurationMs > 0 {
+								renderHeaderPill(c, fmt.Sprintf("%d ms", resp.DurationMs), theme.TextSecondary)
+							}
+						}
+						ui.Box(c).Grow(1)
+					})
+
+				if loading {
+					ui.Column(c).
+						Grow(1).
+						Center().
+						Children(func() {
+							ui.Text(c, "Executing GraphQL operation...").
+								Font(theme.FontSans).
+								FontSize(theme.SizeBase).
+								TextColor(theme.TextMuted)
+						})
+					return
+				}
+
+				if resp == nil {
+					ui.Column(c).
+						Grow(1).
+						Center().
+						Children(func() {
+							ui.Text(c, "Execute a GraphQL operation to view JSON data and resolver telemetry.").
+								Font(theme.FontSans).
+								FontSize(theme.SizeBase).
+								TextColor(theme.TextMuted)
+						})
+					return
+				}
+
+				if resp.RequestError != "" {
+					ui.Row(c).
+						Padding(8, 10, 8, 10).
+						Radius(6).
+						Background(ui.RGBA(0xEF, 0x44, 0x44, 0.12)).
+						Border(1, theme.RimDanger).
+						Children(func() {
+							ui.Text(c, resp.RequestError).
+								Font(theme.FontMono).
+								FontSize(theme.SizeBase).
+								TextColor(theme.RimDanger)
+						})
+				}
+
+				if len(resp.Errors) > 0 {
+					ui.Column(c).
+						Padding(8, 10, 8, 10).
+						Radius(6).
+						Gap(4).
+						Background(ui.RGBA(0xEF, 0x44, 0x44, 0.10)).
+						Border(1, theme.RimDanger).
+						Children(func() {
+							ui.Text(c, fmt.Sprintf("GRAPHQL ERRORS (%d)", len(resp.Errors))).
+								Font(theme.FontMono).
+								FontSize(theme.SizeShortcut).
+								Bold().
+								TextColor(theme.RimDanger)
+							for _, gqlE := range resp.Errors {
+								msg := gqlE.Message
+								if len(gqlE.Locations) > 0 {
+									loc := gqlE.Locations[0]
+									msg = fmt.Sprintf("%s (line %d:%d)", msg, loc.Line, loc.Column)
+								}
+								ui.Text(c, msg).
+									Font(theme.FontMono).
+									FontSize(theme.SizeBadge).
+									TextColor(theme.TextPrimary)
+							}
+						})
+				}
+
+				payload := resp.DataJSON
+				switch respTab {
+				case "extensions":
+					payload = resp.ExtensionsJSON
+					if strings.TrimSpace(payload) == "" {
+						payload = "{\n  \"info\": \"No GraphQL extensions returned\"\n}"
+					}
+				case "raw":
+					payload = resp.RawJSON
+				}
+
+				ui.Row(c).
+					AlignItems(ui.Center).
+					Gap(6).
+					Children(func() {
+						renderStreamPillBtn(c, "Data", respTab == "data", func() {
+							state.SetGraphQLResponseTab("data")
+						})
+						renderStreamPillBtn(c, "Extensions", respTab == "extensions", func() {
+							state.SetGraphQLResponseTab("extensions")
+						})
+						renderStreamPillBtn(c, "Raw", respTab == "raw", func() {
+							state.SetGraphQLResponseTab("raw")
+						})
+						ui.Box(c).Grow(1)
+						renderStreamPillBtn(c, "Copy", false, func() {
+							c.Services().WriteClipboard(payload)
+						})
+					})
+
+				renderGraphQLResponseEditor(c, state, payload)
+			})
+	}).Grow(1)
 }
 
 func renderGraphQLDocumentPane(c *ui.Context, state *models.AppState, req models.GraphQLRequest, suggestions []string) {

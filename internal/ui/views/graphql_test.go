@@ -207,3 +207,70 @@ func TestGraphQLView_SplitQueryVariablesAndAutocomplete(t *testing.T) {
 		t.Fatalf("expected Reset {} to set VariablesJSON to \"{}\", got %q", varsAfter)
 	}
 }
+
+func TestGraphQLView_ResolverTelemetryAndResponseTabs(t *testing.T) {
+	state := models.NewAppState(nil)
+	state.SetGraphQLRunner(fakeGraphQLRunner{})
+	state.OpenGraphQLExplorer("https://api.example.com/graphql")
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(theme.NewBoomerangTheme())
+		ShellView(c, state)
+	}, 1280, 820)
+	tt.Frame()
+
+	// Execute GraphQL operation via Execute Query button
+	if err := tt.Click("Execute Query"); err != nil {
+		t.Fatalf("click Execute Query: %v", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var hasResp bool
+		state.View(func(s *models.AppState) {
+			hasResp = s.GQLResponse != nil
+		})
+		if hasResp {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	tt.Frame()
+
+	for _, want := range []string{"200 OK", "resolver_time: 11.4 ms", "18 ms"} {
+		if !tt.HasText(want) {
+			t.Fatalf("expected telemetry chip %q in GraphQL response pane", want)
+		}
+	}
+
+	// Verify formatted JSON response inside GraphQL Response Viewer
+	respNode, ok := tt.Access("GraphQL Response Viewer")
+	if !ok || !strings.Contains(respNode.Value, "ada@boomerang.dev") {
+		t.Fatalf("expected GraphQL Response Viewer to contain formatted DataJSON, got ok=%v node=%+v", ok, respNode)
+	}
+
+	// Switch to Raw tab
+	if err := tt.Click("Raw"); err != nil {
+		t.Fatalf("click Raw tab: %v", err)
+	}
+	tt.Frame()
+	rawNode, ok := tt.Access("GraphQL Response Viewer")
+	if !ok || !strings.Contains(rawNode.Value, "\"data\"") {
+		t.Fatalf("expected RawJSON displayed on Raw tab, got ok=%v node=%+v", ok, rawNode)
+	}
+
+	// Inject GraphQL execution errors and verify error diagnostic panel renders
+	state.Mutate(func(s *models.AppState) {
+		s.GQLResponse.Errors = []models.GraphQLError{
+			{
+				Message:   "Field 'secret' requires scope",
+				Locations: []models.GraphQLLocation{{Line: 2, Column: 4}},
+			},
+		}
+	})
+	tt.Frame()
+
+	if !tt.HasText("GRAPHQL ERRORS (1)") || !tt.HasText("Field 'secret' requires scope (line 2:4)") {
+		t.Fatal("expected GraphQL error diagnostics panel with line:column location")
+	}
+}
