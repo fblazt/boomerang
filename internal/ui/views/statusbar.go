@@ -57,6 +57,7 @@ func StatusBarView(c *ui.Context, state *models.AppState) ui.Element {
 					ui.Box(c).Width(1).Height(10).Background(theme.BorderSubtle)
 
 					// Collections & Requests count
+					_, reqCount := state.CollectionCounts()
 					ui.Row(c).
 						Gap(4).
 						AlignItems(ui.Center).
@@ -65,7 +66,7 @@ func StatusBarView(c *ui.Context, state *models.AppState) ui.Element {
 								Font(theme.FontMono).
 								FontSize(theme.SizeShortcut).
 								TextColor(theme.TextDim)
-							ui.Text(c, "4 requests, 2 streams").
+							ui.Text(c, fmt.Sprintf("%d requests, 2 streams", reqCount)).
 								Font(theme.FontMono).
 								FontSize(theme.SizeShortcut).
 								TextColor(theme.TextSecondary)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/fblazt/boomerang/internal/engine/collection"
 	"github.com/fblazt/boomerang/internal/engine/env"
 	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
 	"github.com/fblazt/boomerang/internal/engine/storage"
@@ -80,6 +81,17 @@ func NewApp(opts Options) *App {
 	if dbStore != nil {
 		st.SetHistoryStore(dbStore)
 	}
+
+	// Initialize local filesystem collections store (or in-memory fallback)
+	var colStore *collection.Store
+	if dataDir != "" {
+		colStore, _ = collection.NewStore(filepath.Join(dataDir, "collections"))
+	}
+	if colStore == nil {
+		colStore = collection.NewInMemoryStore()
+	}
+	_ = colStore.SeedDefaultsIfEmpty()
+	st.SetCollectionStore(colStore)
 
 	eng := env.NewEngine(vault, models.DefaultEnvironments())
 	st.SetEnvEngine(eng)

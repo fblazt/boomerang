@@ -45,6 +45,24 @@ type HistoryStore interface {
 	ClearHistory() error
 }
 
+// CollectionStore defines persistence operations for collections, folders, and saved requests.
+type CollectionStore interface {
+	Collections() []Collection
+	CreateCollection(name string) (Collection, error)
+	RenameCollection(collectionID, name string) error
+	DeleteCollection(collectionID string) error
+	CreateFolder(collectionID, parentFolderID, name string) (Folder, error)
+	RenameFolder(collectionID, folderID, newName string) error
+	DeleteFolder(collectionID, folderID string) error
+	SaveItem(collectionID, folderID, name string, req RequestModel) (CollectionItem, error)
+	UpdateItemRequest(collectionID, itemID string, req RequestModel) (CollectionItem, error)
+	RenameItem(collectionID, itemID, newName string) error
+	DuplicateItem(collectionID, itemID string) (CollectionItem, error)
+	ReorderItem(collectionID, itemID string, delta int) error
+	MoveItem(collectionID, itemID, targetFolderID string, targetIdx int) error
+	DeleteItem(collectionID, itemID string) error
+}
+
 // AppState holds the thread-safe global reactive state of the Boomerang application.
 type AppState struct {
 	mu sync.RWMutex
@@ -57,8 +75,21 @@ type AppState struct {
 	executor RequestExecutor
 	cancelFn context.CancelFunc
 
-	// History & Scratchpad persistence
-	historyStore HistoryStore
+	// History & Collections persistence
+	historyStore    HistoryStore
+	collectionStore CollectionStore
+
+	// Collections Tree State
+	Collections        []Collection
+	ActiveCollectionID string
+	ActiveItemID       string
+	SelectedFolderID   string
+	CollapsedNodes     map[string]bool
+	CollectionFilter   string
+	RenamingNodeType   string // "collection", "folder", "item"
+	RenamingCollection string
+	RenamingNodeID     string
+	RenameDraft        string
 
 	// Active Request & Response
 	ActiveRequest  RequestModel
@@ -111,8 +142,10 @@ func NewAppState(redrawFn func()) *AppState {
 		VaultModalTab:   "variables",
 		RevealedSecrets: make(map[string]bool),
 		Environments:    DefaultEnvironments(),
-		ActiveTab:    "params",
-		SidebarOpen:  true,
+		Collections:     DefaultCollections(),
+		CollapsedNodes:  make(map[string]bool),
+		ActiveTab:       "params",
+		SidebarOpen:     true,
 	}
 }
 

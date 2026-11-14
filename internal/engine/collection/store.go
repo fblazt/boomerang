@@ -41,10 +41,21 @@ func NewStore(dir string) (*Store, error) {
 	return s, nil
 }
 
+// NewInMemoryStore returns an in-memory collection store without filesystem persistence.
+func NewInMemoryStore() *Store {
+	return &Store{
+		paths: make(map[string]string),
+	}
+}
+
 // Reload discards cached collections and reads all *.json collection files from disk.
 func (s *Store) Reload() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.dir == "" {
+		return nil
+	}
 
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -312,6 +323,9 @@ func (s *Store) findCollectionIdxLocked(collectionID string) int {
 }
 
 func (s *Store) writeCollectionLocked(col models.Collection) error {
+	if s.dir == "" {
+		return nil
+	}
 	filename := fmt.Sprintf("%s-%s.json", storage.SafeSlug(col.Name), col.ID)
 	targetPath := filepath.Join(s.dir, filename)
 

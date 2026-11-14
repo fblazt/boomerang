@@ -110,7 +110,9 @@ func UrlBarView(c *ui.Context, state *models.AppState) ui.Element {
 				})
 			}
 
-			primitives.SaveButton(c, func() {})
+			primitives.SaveButton(c, func() {
+				_ = state.SaveActiveRequest()
+			})
 		})
 }
 
