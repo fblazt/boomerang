@@ -163,9 +163,10 @@ type AppState struct {
 	VaultModalTab   string          // "variables", "transport"
 	RevealedSecrets map[string]bool // key -> isRevealed
 
-	// Template Interpolator hooks
+	// Template Interpolator & Assertion hooks
 	interpolateFn    func(req RequestModel, vars map[string]string) RequestModel
 	interpolateStrFn func(template string, vars map[string]string) string
+	testEvalFn       func(script string, req RequestModel, resp *ResponseModel) []TestAssertionResult
 
 	// History Timeline Modal State
 	ShowHistoryModal     bool
@@ -270,6 +271,13 @@ func (s *AppState) SetExecutor(exec RequestExecutor) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.executor = exec
+}
+
+// SetTestEvaluator attaches the JavaScript-style response assertion evaluator.
+func (s *AppState) SetTestEvaluator(fn func(script string, req RequestModel, resp *ResponseModel) []TestAssertionResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.testEvalFn = fn
 }
 
 // SetHistoryStore attaches a persistent history store for logging completed request executions.
@@ -944,6 +952,7 @@ func (s *AppState) SendRequest() {
 	}
 	activeEnv := s.ActiveEnv
 	histStore := s.historyStore
+	testEval := s.testEvalFn
 	s.InFlightStage = 3
 	s.mu.Unlock()
 
@@ -1005,6 +1014,13 @@ func (s *AppState) SendRequest() {
 			resp = &ResponseModel{
 				Error: err.Error(),
 			}
+		}
+
+		if testEval != nil && strings.TrimSpace(reqCopy.TestScript) != "" {
+			s.mu.Lock()
+			s.InFlightStage = 4
+			s.mu.Unlock()
+			resp.Assertions = testEval(reqCopy.TestScript, reqCopy, resp)
 		}
 
 		elapsedMs := time.Since(startTime).Milliseconds()

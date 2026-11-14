@@ -54,6 +54,9 @@ func ResponseView(c *ui.Context, state *models.AppState) ui.Element {
 
 			renderResponseHeader(c, resp)
 			TelemetryWaterfallBar(c, resp.Telemetry)
+			if len(resp.Assertions) > 0 {
+				renderAssertionStrip(c, resp.Assertions)
+			}
 			renderResponseBody(c, state, resp.Body)
 		})
 }
@@ -306,6 +309,44 @@ func formatDurationBadge(resp *models.ResponseModel) string {
 		return fmt.Sprintf("%.2f ms", float64(resp.Telemetry.TotalMicros)/1000.0)
 	}
 	return fmt.Sprintf("%d ms", ms)
+}
+
+func renderAssertionStrip(c *ui.Context, assertions []models.TestAssertionResult) {
+	passed := 0
+	for _, a := range assertions {
+		if a.Passed {
+			passed++
+		}
+	}
+	ui.Row(c).
+		Padding(6, 8, 6, 8).
+		Radius(6).
+		Background(theme.SurfaceCardTop).
+		Border(1, theme.BorderSubtle).
+		AlignItems(ui.Center).
+		Gap(8).
+		Wrap().
+		Children(func() {
+			summaryColor := ui.RGB(0x34, 0xD3, 0x99)
+			if passed < len(assertions) {
+				summaryColor = theme.RimDanger
+			}
+			ui.Text(c, fmt.Sprintf("TESTS %d/%d", passed, len(assertions))).
+				Font(theme.FontMono).
+				FontSize(theme.SizeShortcut).
+				Bold().
+				TextColor(summaryColor)
+
+			for _, a := range assertions {
+				badgeColor := ui.RGB(0x34, 0xD3, 0x99)
+				prefix := "PASS "
+				if !a.Passed {
+					badgeColor = theme.RimDanger
+					prefix = "FAIL "
+				}
+				renderHeaderPill(c, prefix+a.Name, badgeColor)
+			}
+		})
 }
 
 // TelemetryWaterfallBar renders a segmented progress bar of DNS, TCP, TLS, TTFB, and DL timings.
