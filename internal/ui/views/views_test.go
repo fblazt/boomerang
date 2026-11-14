@@ -2,10 +2,14 @@ package views
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/fblazt/boomerang/internal/engine/env"
+	enginehttp "github.com/fblazt/boomerang/internal/engine/http"
 	"github.com/fblazt/boomerang/internal/models"
 )
 
@@ -585,5 +589,97 @@ func TestShellView_VaultModalIntegration(t *testing.T) {
 
 	if state.ShowVaultModal {
 		t.Fatal("expected ShowVaultModal to be false after Close")
+	}
+}
+
+type handlerRoundTripper struct {
+	handler http.Handler
+}
+
+func (rt *handlerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := req.Context().Err(); err != nil {
+		return nil, err
+	}
+	rec := httptest.NewRecorder()
+	rt.handler.ServeHTTP(rec, req)
+	resp := rec.Result()
+	resp.Request = req
+	return resp, nil
+}
+
+func TestRESTFlow_WithMockServer(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/users" {
+			t.Errorf("expected path /v1/users, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer bk_live_94aB882c0f12" {
+			t.Errorf("expected interpolated bearer header, got %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{\n  \"status\": \"ok\"\n}"))
+	})
+
+	vault, err := env.NewInMemorySecretVault("tier3-test-key")
+	if err != nil {
+		t.Fatalf("failed to create vault: %v", err)
+	}
+	eng := env.NewEngine(vault, models.DefaultEnvironments())
+	if err := eng.UpdateVariable("PROD", "base_url", models.Variable{
+		Key:          "base_url",
+		InitialValue: "https://api.internal.test",
+		CurrentValue: "https://api.internal.test",
+		Type:         models.VariableTypeText,
+		Enabled:      true,
+	}, ""); err != nil {
+		t.Fatalf("failed to update base_url: %v", err)
+	}
+
+	state := models.NewAppState(nil)
+	state.SetEnvEngine(eng)
+	state.SetExecutor(enginehttp.NewClientWithTransport(&handlerRoundTripper{handler: handler}, 5*time.Second))
+	state.SetInterpolator(env.InterpolateRequest, env.Interpolate)
+	state.ActiveRequest.Method = "GET"
+	state.ActiveRequest.URL = "{{base_url}}/v1/users"
+	state.ActiveRequest.Headers = []models.KeyValuePair{
+		{Key: "Authorization", Value: "Bearer {{api_key}}", Enabled: true},
+	}
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		MainWorkspaceView(c, state)
+	}, 1440, 900)
+	tt.Frame()
+
+	if err := tt.Click("Send"); err != nil {
+		t.Fatalf("failed to click Send: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var finished bool
+		state.View(func(s *models.AppState) {
+			finished = !s.IsLoading && s.ActiveResponse != nil
+		})
+		if finished {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	tt.Frame()
+
+	if state.ActiveResponse == nil {
+		t.Fatal("expected ActiveResponse to be populated")
+	}
+	if state.ActiveResponse.Error != "" {
+		t.Fatalf("unexpected response error: %s", state.ActiveResponse.Error)
+	}
+	if !tt.HasText("200 200 OK") {
+		t.Fatalf("expected '200 200 OK' status badge in response panel, got status %d (%s)", state.ActiveResponse.StatusCode, state.ActiveResponse.StatusText)
+	}
+	if !tt.HasText("TTFB") {
+		t.Fatal("expected telemetry waterfall breakdown")
+	}
+	if !tt.HasText("\"status\": \"ok\"") {
+		t.Fatal("expected response body content rendered in panel")
 	}
 }
